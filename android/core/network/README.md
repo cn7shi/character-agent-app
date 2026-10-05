@@ -1,6 +1,6 @@
 # 通信实现
 
-状态：已接入纯 Kotlin 构建，提供可替换 Transport 与可取消的 HTTP 实现，不理解角色或页面。
+状态：纯 Kotlin 模块，提供 HttpRequests/HttpEvents、可取消的 HTTP/SSE 实现、有界分帧、安全错误和连接关闭。不理解角色或页面。协议可拔插的共同业务边界在 domain.BackendAdapter；这里不把 HTTP 方法伪装成通用协议。
 
 负责网络请求、流式传输、取消与通信错误，为模型和外部工具适配提供连接能力。根据真实服务需求逐步增加通信方式。
 

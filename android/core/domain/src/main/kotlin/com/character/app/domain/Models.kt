@@ -33,6 +33,8 @@ interface CharacterRepository {
     suspend fun retry(messageId: String)
     suspend fun dismiss(messageId: String)
     suspend fun poll(conversationId: String)
+    /** Foreground observation; cancelling collection never cancels the server's task. */
+    suspend fun observeConversation(conversationId: String)
     suspend fun cancel(runId: String)
 }
 
@@ -47,3 +49,13 @@ interface BackendGateway {
     suspend fun run(runId: String): Run
     suspend fun cancel(runId: String): Run
 }
+
+/** Protocol-neutral boundary. Unsupported capabilities must be declared, not silently emulated. */
+interface BackendAdapter : BackendGateway, AutoCloseable {
+    val supportsEvents: Boolean
+    fun events(runId: String, afterSequence: Long): Flow<RunEvent>
+}
+
+data class RunEvent(val runId: String, val sequence: Long, val kind: EventKind,
+                    val message: Message? = null, val error: String? = null)
+enum class EventKind { ACCEPTED, STARTED, MESSAGE, CANCEL_REQUESTED, COMPLETED, FAILED, CANCELLED, TOOL, UNKNOWN }

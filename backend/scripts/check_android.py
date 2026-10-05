@@ -19,7 +19,7 @@ def main():
             (directory / "android-endpoint.txt").write_text(endpoint, encoding="utf-8")
             result = subprocess.run(
                 [str(backend.parent / "android" / ("gradlew.bat" if os.name == "nt" else "gradlew")),
-                 ":core:network:test", ":core:data:testDebugUnitTest", "--console=plain", "--rerun-tasks"],
+                 ":core:domain:test", ":core:network:test", ":core:data:testDebugUnitTest", "--console=plain", "--rerun-tasks"],
                 cwd=backend.parent / "android", env={**os.environ, "CHARACTER_ANDROID_TEST_DIR": str(directory)},
             )
             if result.returncode:

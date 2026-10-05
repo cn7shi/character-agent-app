@@ -4,7 +4,7 @@
 
 ## 当前进度
 
-阶段 6A 已加入 Kotlin/Compose 原生客户端：角色、会话、聊天、笔记与设置页面，Room 缓存、固定请求重试和基础深浅色。12 项 Android 网络/数据测试通过，包含 Kotlin 仓库实际连接本机 Python 后端。后端继续支持模拟回复、Agent 笔记与凭证保护，不配置真实 AI 也可联调；此前后端 57 项测试通过。Android SSE、设备交互验收、完整原型视觉、真实模型联调和 MCP 仍待后续阶段。
+阶段 6B1 已完成 Android 网络边界与恢复：业务适配器、有限重试、SSE 续接、事件/正文事务、查询回退及实时/兼容模式切换。39 项 Android 测试通过，包含内存与 HTTP 的共同契约、真实 SSE 写入 Room、断开恢复和实际笔记保存；APK 构建与静态检查通过。后端继续使用固定回复，不配置真实 AI 也可联调。持久草稿、设备交互验收、完整原型视觉、真实模型联调和 MCP 留待后续阶段。
 
 代码仓库：私有仓库 [cn7shi/character-agent-app](https://github.com/cn7shi/character-agent-app)。按阶段提交源码、接口和设计记录，运行数据与凭证留在本机。
 
@@ -19,7 +19,8 @@
 - [Android 运行说明](android/README.md)：构建、安装、本机连接与当前客户端范围。
 - [模型配置与凭证保护](docs/model-configuration.md)：本机配置、兼容范围、Git 检查与日志处理。
 - [无需 AI 的演示](docs/offline-demo.md)：两条固定回复、笔记示例与运行方法。
-- [阶段报告](docs/stage-reports/06a-android-client.md)：本次交付、核验和未实现范围。
+- [网络可靠性](docs/network-reliability.md)：适配器边界、重试、恢复及能力范围。
+- [阶段报告](docs/stage-reports/06b1-network-reliability.md)：本次交付、核验和未实现范围。
 - [设计决策记录](docs/decisions.md)：为什么这样写、取舍与未来调整条件。
 - [已实现接口](contracts/openapi-v1.json)：从当前代码生成的 OpenAPI。
 - [推进计划](docs/roadmap.md)：每一步的范围与验收条件。
@@ -59,4 +60,4 @@ Company/
 
 每次任务明确由哪一端执行；首版在线任务在后端。客户端读取业务状态并呈现，同一数据可用于不同布局和主题。
 
-原型参考目录为 `E:\MYcode\IOSH5DEMO`，仅作设计与实现参考，不作为新项目的运行依赖。下一步接入 Android SSE、持久草稿并完成设备验收，再完善原型视觉；真实 AI 可以后续配置。
+原型参考目录为 `E:\MYcode\IOSH5DEMO`，仅作设计与实现参考，不作为新项目的运行依赖。下一步补持久草稿与设备验收，再完善原型视觉；真实 AI 可以后续配置。

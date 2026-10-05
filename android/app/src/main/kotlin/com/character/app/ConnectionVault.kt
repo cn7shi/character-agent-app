@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import com.character.app.data.ConnectionMode
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -15,6 +16,9 @@ import org.json.JSONObject
 internal class ConnectionVault(context: Context) {
     private val preferences = context.getSharedPreferences("connection", Context.MODE_PRIVATE)
     private val alias = "character-development-connection"
+    var mode: ConnectionMode
+        get() = ConnectionMode.entries.firstOrNull { it.name == preferences.getString("mode", null) } ?: ConnectionMode.REALTIME
+        set(value) { check(preferences.edit().putString("mode", value.name).commit()) }
     var dark: Boolean
         get() = preferences.getBoolean("dark", true)
         set(value) { preferences.edit().putBoolean("dark", value).apply() }

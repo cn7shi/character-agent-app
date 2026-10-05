@@ -70,7 +70,7 @@ fun ChatScreen(messages: List<Message>, pending: List<PendingMessage>, runs: Lis
         }
         if (active != null) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(if (active.simulated) "模拟回复 · ${statusLabel(active.status)}" else statusLabel(active.status))
-            TextButton(onClick = { onCancel(active.id) }, enabled = !busy && active.status != "cancel_requested") { Text("停止") }
+            TextButton(onClick = { onCancel(active.id) }, enabled = active.status != "cancel_requested") { Text("停止") }
         }
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(value = draft, onValueChange = onDraft, modifier = Modifier.weight(1f), placeholder = { Text("发送消息…") }, maxLines = 5)

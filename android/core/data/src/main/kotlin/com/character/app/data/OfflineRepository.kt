@@ -2,21 +2,24 @@ package com.character.app.data
 
 import androidx.room.withTransaction
 import com.character.app.domain.*
-import com.character.app.network.RemoteFailure
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 
 fun userMessage(error: Throwable): String = when (error) {
-    is RemoteFailure -> when (error.status) {
-        401, 403 -> "连接凭证无效，请在设置中检查。"
-        404 -> "记录不存在或不属于当前连接。"
-        409 -> "会话正忙或请求冲突，请刷新后再试。"
-        422 -> "内容不符合要求，请检查后重新发送。"
-        429 -> "请求较多，请稍后重试。"
+    is BackendFailure -> when (error.kind) {
+        FailureKind.AUTHENTICATION, FailureKind.FORBIDDEN -> "连接凭证无效，请在设置中检查。"
+        FailureKind.NOT_FOUND -> "记录不存在或不属于当前连接。"
+        FailureKind.CONFLICT -> "会话正忙或请求冲突，请刷新后再试。"
+        FailureKind.INVALID_REQUEST -> "内容不符合要求，请检查后重新发送。"
+        FailureKind.THROTTLED -> "请求较多，请稍后重试。"
+        FailureKind.PROTOCOL, FailureKind.UNSUPPORTED -> "服务返回了无法识别的数据，请检查服务版本。"
         else -> "暂时无法连接服务。已缓存内容仍可查看，请稍后重试。"
     }
     is IllegalArgumentException -> "请检查输入内容或连接设置。"
@@ -24,7 +27,7 @@ fun userMessage(error: Throwable): String = when (error) {
     else -> "暂时无法完成操作，请重试。"
 }
 
-class OfflineRepository(private val db: ClientDatabase, private val scope: String, private val remote: BackendGateway) : CharacterRepository {
+class OfflineRepository(private val db: ClientDatabase, private val scope: String, private val remote: BackendAdapter) : CharacterRepository {
     private val dao = db.dao()
     private val gate = Mutex()
     private fun <T> watch(kind: String, read: (JSONObject) -> T) = dao.observe(scope, kind).map { rows -> rows.map { read(JSONObject(it.payload)) } }
@@ -95,7 +98,8 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
     override suspend fun retry(messageId: String) = gate.withLock {
         val pending = checkNotNull(dao.pendingById(scope, messageId))
         check(!pending.blocked)
-        submit(pending)
+        // Older app versions may have left a null error during process death; a manual retry is always a replay.
+        submit(pending.copy(error = pending.error ?: "上次提交结果待确认。"))
     }
     override suspend fun dismiss(messageId: String) = gate.withLock {
         val pending = checkNotNull(dao.pendingById(scope, messageId))
@@ -104,20 +108,26 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
         dao.deletePending(scope, messageId)
     }
     private suspend fun submit(pending: Outbox) {
+        // Persist BEFORE I/O: after cancellation/process death a later rejection cannot disprove prior acceptance.
+        dao.updatePending(pending.copy(error = "正在确认发送结果，请勿重复发送。"))
         try {
             val run = remote.createRun(pending.conversationId, pending.id, pending.requestKey, pending.text)
             db.withTransaction { store(run); dao.deletePending(scope, pending.id) }
         } catch (error: Exception) {
             if (error is CancellationException) throw error
-            dao.updatePending(pending.copy(error = userMessage(error), blocked = error is RemoteFailure && !error.retryable))
+            // A non-retryable protocol error may follow an accepted write. Only confirmed rejection is dismissible.
+            dao.updatePending(pending.copy(error = userMessage(error), blocked = pending.error == null && error is BackendFailure && error.definitiveRejection))
             throw error
         }
     }
     internal suspend fun store(run: Run) = db.withTransaction {
         val kind = "runs:${run.conversationId}"
         val old = dao.get(scope, kind, run.id)?.let { JsonCodec.run(JSONObject(it.payload)) }
-        // D21: stale polling responses cannot overwrite a newer/terminal local snapshot.
-        if (old == null || run.sequence >= old.sequence) {
+        if (run.sequence < 0 || run.input.runId != run.id || run.output.runId != run.id ||
+            run.input.conversationId != run.conversationId || run.output.conversationId != run.conversationId)
+            throw BackendFailure(FailureKind.PROTOCOL)
+        // D23: this sequence is the durable SSE cursor; both messages and run commit together.
+        if (old == null || (run.sequence > old.sequence && !old.terminal)) {
             dao.put(listOf(row(run.input), row(run.output), Snapshot(scope, kind, run.id, JsonCodec.encode(run).toString(), run.output.updatedAt)))
         }
     }
@@ -130,5 +140,20 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
             if (current.terminal) refreshNotesLocked()
         }
     }
-    override suspend fun cancel(runId: String) = gate.withLock { store(remote.cancel(runId)) }
+    // Observation/network retries must not hold the submission mutex and delay an explicit stop.
+    override suspend fun cancel(runId: String) { store(remote.cancel(runId)) }
+
+    override suspend fun observeConversation(conversationId: String) {
+        refreshConversation(conversationId)
+        refreshNotes() // Also reconciles a tool committed just before process death or observation cancellation.
+        val monitor = RunMonitor(remote)
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val active = runs(conversationId).first { list -> list.any { !it.terminal } }.first { !it.terminal }
+            monitor.follow(load = {
+                checkNotNull(dao.get(scope, "runs:$conversationId", active.id)).let { JsonCodec.run(JSONObject(it.payload)) }
+            }, save = ::store)
+            refreshNotes()
+        }
+    }
 }

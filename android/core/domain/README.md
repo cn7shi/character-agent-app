@@ -1,6 +1,6 @@
 # 业务核心
 
-状态：已接入纯 Kotlin 构建，提供业务对象、仓库与后端网关接口，不依赖 Android。
+状态：纯 Kotlin 模块，提供业务对象、仓库、BackendAdapter 与 RunEvent，不依赖 Android。ReliableBackend 实现有限重试，RunMonitor 实现游标恢复/去重/快照回退；具体 HTTP 和 Room 不进入本模块。
 
 负责角色、会话、消息、记忆、任务等业务实体，业务操作，以及数据仓库、模型、Agent 与工具的接口约定。
 

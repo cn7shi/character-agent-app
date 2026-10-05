@@ -7,6 +7,10 @@ import com.character.app.domain.*
 import com.character.app.network.RemoteFailure
 import java.util.UUID
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.*
 import kotlinx.coroutines.runBlocking
 import org.junit.*
 import org.junit.Assert.*
@@ -14,12 +18,18 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-internal class FixtureBackend : BackendGateway {
+internal class FixtureBackend : BackendAdapter {
+    override var supportsEvents = false
+    var eventFlow: (Long) -> Flow<RunEvent> = { emptyFlow() }
+    val cursors = mutableListOf<Long>()
+    override fun events(runId: String, afterSequence: Long): Flow<RunEvent> { cursors += afterSequence; return eventFlow(afterSequence) }
+    override fun close() = Unit
     val character = Character("character", "林舟", "开发角色", 2)
     val conversation = Conversation("conversation", character.id, "林舟", "2026-10-05T00:00:00Z")
     val requests = mutableListOf<List<String>>()
     val conversationKeys = mutableListOf<String>()
     val receipts = mutableMapOf<String, Run>()
+    private val fingerprints = mutableMapOf<String, List<String>>()
     var loseNextResponse = false
     var loseConversationResponse = false
     var forbidden = false
@@ -41,12 +51,15 @@ internal class FixtureBackend : BackendGateway {
     override suspend fun createRun(conversationId: String, messageId: String, requestKey: String, text: String): Run {
         requests += listOf(conversationId, messageId, requestKey, text)
         if (forbidden) throw RemoteFailure(422)
-        val result = receipts.getOrPut(requestKey) { writes++; sample().also { current = it } }
+        val fingerprint = listOf(conversationId, messageId, text)
+        if (fingerprints[requestKey]?.let { it != fingerprint } == true) throw RemoteFailure(409)
+        fingerprints[requestKey] = fingerprint
+        val result = receipts.getOrPut(requestKey) { writes++; sample().let { it.copy(input = it.input.copy(id = messageId, blocks = listOf(MessageBlock("text", text)))) }.also { current = it } }
         if (loseNextResponse) { loseNextResponse = false; throw RemoteFailure() }
         return result
     }
     override suspend fun run(runId: String) = checkNotNull(current)
-    override suspend fun cancel(runId: String) = sample("cancelled", 9).also { current = it }
+    override suspend fun cancel(runId: String) = current?.takeIf { it.terminal } ?: sample("cancelled", 9).also { current = it }
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -141,5 +154,78 @@ class OfflineRepositoryTest {
         repository().cancel("run")
         assertEquals("cancelled", repository().runs("conversation").first().single().status)
         assertTrue(repository().messages("conversation").first().last().text.isNotBlank())
+    }
+
+    @Test fun sharedRetryPolicyReusesPersistedWriteIdentityAfterLostAcknowledgement() = runBlocking {
+        backend.loseNextResponse = true
+        val repo = OfflineRepository(database, "profile-a", ReliableBackend(backend, RetryPolicy(pause = {})))
+        repo.send("conversation", "记笔记：测试")
+        assertEquals(2, backend.requests.size)
+        assertEquals(backend.requests[0], backend.requests[1])
+        assertEquals(1, backend.writes)
+        assertTrue(repo.pending("conversation").first().isEmpty())
+    }
+
+    @Test fun malformedReplyKeepsPendingIdentityAfterRestart() = runBlocking {
+        val corrupt = object : BackendAdapter by backend {
+            override suspend fun createRun(conversationId: String, messageId: String, requestKey: String, text: String): Run {
+                backend.createRun(conversationId, messageId, requestKey, text)
+                throw BackendFailure(FailureKind.PROTOCOL)
+            }
+        }
+        val repo = OfflineRepository(database, "profile-a", corrupt)
+        try { repo.send("conversation", "hello"); fail() } catch (_: BackendFailure) { }
+        val pending = repo.pending("conversation").first().single()
+        assertFalse(pending.blocked)
+        reopen()
+        repository().retry(pending.id)
+        assertEquals(1, backend.writes)
+        assertEquals(backend.requests[0], backend.requests[1])
+    }
+
+    @Test fun eventTextAndCursorSurviveDatabaseReopenAndResumeWithoutDuplicates() = runBlocking {
+        backend.supportsEvents = true
+        val repo = repository()
+        repo.store(backend.sample("running", 4))
+        val committed = CompletableDeferred<Unit>()
+        backend.eventFlow = { flow {
+            emit(RunEvent("run", 5, EventKind.MESSAGE, backend.sample().output.copy(status = "streaming", blocks = listOf(MessageBlock("text", "已保存一半")))))
+            committed.complete(Unit)
+            awaitCancellation()
+        } }
+        val job = launch {
+            RunMonitor(backend).follow({ repo.runs("conversation").first().single() }, repo::store)
+        }
+        committed.await()
+        job.cancelAndJoin()
+        reopen()
+        val restored = repository()
+        assertEquals(5L, restored.runs("conversation").first().single().sequence)
+        assertEquals("已保存一半", restored.messages("conversation").first().last().text)
+        backend.eventFlow = { cursor -> flow {
+            assertEquals(5L, cursor)
+            emit(RunEvent("run", 5, EventKind.MESSAGE, backend.sample().output))
+            emit(RunEvent("run", 6, EventKind.COMPLETED, backend.sample().output))
+        } }
+        RunMonitor(backend).follow({ restored.runs("conversation").first().single() }, restored::store)
+        assertEquals(listOf(4L, 5L), backend.cursors)
+        assertEquals(2, restored.messages("conversation").first().size)
+        assertEquals("completed", restored.runs("conversation").first().single().status)
+    }
+
+    @Test fun memoryAdapterPassesSharedBusinessContract() = runBlocking { verifyAdapterContract(backend, "character") }
+
+    @Test fun laterRejectionAfterRestartCannotDiscardAnUnconfirmedAcceptedWrite() = runBlocking {
+        backend.loseNextResponse = true
+        try { repository().send("conversation", "hello"); fail() } catch (_: RemoteFailure) { }
+        // Stage 6A could leave a null error if the process died during submission.
+        val legacy = database.dao().pending("profile-a", "conversation").single()
+        database.dao().updatePending(legacy.copy(error = null))
+        reopen()
+        backend.forbidden = true
+        val pending = repository().pending("conversation").first().single()
+        try { repository().retry(pending.id); fail() } catch (_: RemoteFailure) { }
+        assertFalse(repository().pending("conversation").first().single().blocked)
+        assertEquals(1, backend.writes)
     }
 }

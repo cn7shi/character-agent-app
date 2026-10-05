@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
                                 Surface(color = MaterialTheme.colorScheme.errorContainer) {
                                     Row(Modifier.fillMaxWidth().padding(start = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                                         Text(error, Modifier.weight(1f).padding(vertical = 12.dp), style = MaterialTheme.typography.bodySmall)
+                                        if (state.selected != null) TextButton(onClick = { model.clearError(); model.reconnectChat() }) { Text("重新连接") }
                                         TextButton(onClick = model::clearError) { Text("关闭") }
                                     }
                                 }
@@ -64,7 +65,7 @@ class MainActivity : ComponentActivity() {
                         else when (state.tab) {
                             "角色" -> CharactersScreen(state.characters, state.conversations, state.busy, model::create, model::open, model::refreshHome)
                             "笔记" -> NotesScreen(state.notes, state.busy, model::refreshNotes)
-                            else -> SettingsScreen(state.url, state.connected, state.dark, state.busy, model::connect, model::disconnect, model::theme)
+                            else -> SettingsScreen(state.url, state.connected, state.dark, state.busy, state.polling, model::connect, model::disconnect, model::theme, model::mode)
                         }
                     }
                 }
