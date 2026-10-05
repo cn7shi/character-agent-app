@@ -6,6 +6,7 @@ import androidx.room.Room
 import com.character.app.data.*
 import com.character.app.domain.*
 import com.character.app.network.*
+import java.util.UUID
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
@@ -15,7 +16,7 @@ data class ClientState(
     val characters: List<Character> = emptyList(), val conversations: List<Conversation> = emptyList(),
     val notes: List<Note> = emptyList(), val selected: Conversation? = null,
     val messages: List<Message> = emptyList(), val pending: List<PendingMessage> = emptyList(),
-    val runs: List<Run> = emptyList(), val draft: String = ""
+    val runs: List<Run> = emptyList(), val draft: String = "", val draftState: DraftSaveState = DraftSaveState.LOADING
 )
 
 class ClientViewModel internal constructor(
@@ -36,10 +37,18 @@ class ClientViewModel internal constructor(
     private var session = CoroutineScope(SupervisorJob(lifetime) + mainDispatcher)
     private var chatJob: Job? = null
     private val foreground = MutableStateFlow(true)
-    private class Draft(val text: String)
-    private val drafts = mutableMapOf<String, Draft>()
+    private class Draft(val value: MessageDraft, var state: DraftSaveState)
+    private val drafts = mutableMapOf<DraftWriter.Key, Draft>()
     private val mutable = MutableStateFlow(ClientState(dark = vault.dark, polling = vault.mode == ConnectionMode.POLLING))
     val state = mutable.asStateFlow()
+    private val draftWriter = DraftWriter(CoroutineScope(lifetime + mainDispatcher)) { key, value, saved ->
+        val draft = drafts[key]
+        if (draft?.value?.revision == value.revision) {
+            draft.state = if (saved) DraftSaveState.SAVED else DraftSaveState.FAILED
+            if (connectionScope == key.profile && state.value.selected?.id == key.conversation && state.value.draftState != DraftSaveState.LOADING)
+                mutable.update { it.copy(draftState = draft.state) }
+        }
+    }
 
     init {
         try { vault.read()?.let { attach(BackendConnection(it.first, it.second)) } }
@@ -56,8 +65,7 @@ class ClientViewModel internal constructor(
         session.cancel()
         adapter?.close()
         session = CoroutineScope(SupervisorJob(lifetime) + mainDispatcher)
-        // D25: changing transport within one profile must not discard unsent input.
-        if (connectionScope != connection.scope) drafts.clear()
+        // D26: both the in-memory edits and persisted drafts are keyed by profile + conversation.
         connectionScope = connection.scope
         val backend = backendFactory(connection, vault.mode)
         adapter = backend
@@ -92,7 +100,27 @@ class ClientViewModel internal constructor(
         } catch (_: Exception) { mutable.update { it.copy(error = "无法切换连接方式，请重试。") } }
     }
     fun reconnectChat() { state.value.selected?.let(::open) }
-    fun draft(text: String) { state.value.selected?.let { drafts[it.id] = Draft(text) }; mutable.update { it.copy(draft = text) } }
+    fun draft(text: String) {
+        val conversation = state.value.selected ?: return
+        val repo = repository ?: return
+        val profile = connectionScope ?: return
+        if (state.value.draftState == DraftSaveState.LOADING) return
+        val draft = Draft(MessageDraft(UUID.randomUUID().toString(), text), DraftSaveState.SAVING)
+        val key = DraftWriter.Key(profile, conversation.id)
+        drafts[key] = draft
+        mutable.update { it.copy(draft = text, draftState = draft.state) }
+        draftWriter.save(key, repo, draft.value)
+    }
+    fun retryDraftSave() {
+        val conversation = state.value.selected ?: return
+        val repo = repository ?: return
+        val profile = connectionScope ?: return
+        val key = DraftWriter.Key(profile, conversation.id)
+        val draft = drafts[key] ?: return
+        draft.state = DraftSaveState.SAVING
+        mutable.update { it.copy(draftState = draft.state) }
+        draftWriter.save(key, repo, draft.value)
+    }
     fun back() { chatJob?.cancel(); mutable.update { it.copy(selected = null, messages = emptyList(), pending = emptyList(), runs = emptyList(), draft = "") } }
     fun refreshHome() = action { refreshHome() }
     fun refreshNotes() = action { refreshNotes() }
@@ -104,9 +132,34 @@ class ClientViewModel internal constructor(
     }
     fun open(conversation: Conversation) {
         val repo = repository ?: return
+        val profile = connectionScope ?: return
+        val key = DraftWriter.Key(profile, conversation.id)
         chatJob?.cancel()
-        mutable.update { it.copy(selected = conversation, messages = emptyList(), pending = emptyList(), runs = emptyList(), draft = drafts[conversation.id]?.text.orEmpty()) }
+        val cachedDraft = drafts[key]
+        mutable.update { it.copy(selected = conversation, messages = emptyList(), pending = emptyList(), runs = emptyList(),
+            draft = cachedDraft?.value?.text.orEmpty(), draftState = DraftSaveState.LOADING) }
         chatJob = session.launch {
+            launch {
+                try {
+                    val previousSaveSucceeded = draftWriter.flush(key)
+                    // Always re-read: a cancelled send may already have consumed the draft atomically.
+                    var loaded = if (!previousSaveSucceeded && cachedDraft != null) cachedDraft
+                        else Draft(repo.draft(conversation.id) ?: MessageDraft(UUID.randomUUID().toString(), ""),
+                            if (previousSaveSucceeded) DraftSaveState.SAVED else DraftSaveState.FAILED)
+                    // A send can finish while the read is suspended; never restore its older snapshot.
+                    if (cachedDraft != null && drafts[key] !== cachedDraft)
+                        loaded = drafts[key] ?: Draft(MessageDraft(UUID.randomUUID().toString(), ""), DraftSaveState.SAVED)
+                    if (repository === repo && state.value.selected?.id == conversation.id) {
+                        drafts[key] = loaded
+                        mutable.update { it.copy(draft = loaded.value.text, draftState = loaded.state,
+                            error = if (previousSaveSucceeded || cachedDraft != null) it.error else "此前草稿保存失败，已恢复最近保存的内容。") }
+                    }
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    if (repository === repo && state.value.selected?.id == conversation.id)
+                        mutable.update { it.copy(error = "无法读取本机草稿，请点重新连接后重试。") }
+                }
+            }
             launch {
                 combine(repo.messages(conversation.id), repo.pending(conversation.id), repo.runs(conversation.id)) { messages, pending, runs -> Triple(messages, pending, runs) }
                     .collect { (messages, pending, runs) ->
@@ -129,19 +182,26 @@ class ClientViewModel internal constructor(
     fun send() {
         val current = state.value
         val conversation = current.selected ?: return
-        if (current.busy || current.draft.isBlank()) return
-        val submitted = drafts[conversation.id] ?: return
+        if (current.busy || current.draft.isBlank() || current.draftState == DraftSaveState.LOADING) return
+        val profile = connectionScope ?: return
+        val key = DraftWriter.Key(profile, conversation.id)
+        val submitted = drafts[key] ?: return
         action {
+            if (!draftWriter.flush(key)) {
+                mutable.update { it.copy(error = "草稿尚未保存，请先重试保存。") }
+                return@action
+            }
             val previousPending = pending(conversation.id).first().map { it.id }.toSet()
             var acknowledged = false
-            try { send(conversation.id, submitted.text); acknowledged = true }
+            try { send(conversation.id, submitted.value.text, submitted.value.revision); acknowledged = true }
             finally {
-                // Only this submission can consume this edit. Re-typing even identical text creates a new Draft.
+                // Only this submission can consume this edit. Re-typing identical text creates a new revision.
                 // Historical text matches or an already-existing outbox item are not an acknowledgement.
                 val queued = acknowledged || pending(conversation.id).first().any { it.id !in previousPending }
-                if (queued && repository === this && drafts[conversation.id] === submitted) {
-                    drafts.remove(conversation.id)
-                    if (state.value.selected?.id == conversation.id) mutable.update { it.copy(draft = "") }
+                if (queued && repository === this && drafts[key]?.value?.revision == submitted.value.revision) {
+                    drafts.remove(key)
+                    if (state.value.selected?.id == conversation.id && state.value.draftState != DraftSaveState.LOADING)
+                        mutable.update { it.copy(draft = "", draftState = DraftSaveState.SAVED) }
                 }
             }
         }
@@ -169,8 +229,10 @@ class ClientViewModel internal constructor(
         }
     }
     override fun onCleared() {
-        lifetime.cancel()
+        session.cancel()
         adapter?.close()
+        draftWriter.close()
+        lifetime.complete() // Drain accepted local edits; previous network sessions are already cancelled.
         // Cancellation is asynchronous; include previous sessions still unwinding after a profile switch.
         // Closing Room only after all children finish avoids racing an in-flight database query.
         lifetime.invokeOnCompletion { database.close() }

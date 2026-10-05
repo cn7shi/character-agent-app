@@ -23,9 +23,9 @@ private fun statusLabel(status: String) = when (status) {
 }
 
 @Composable
-fun ChatScreen(messages: List<Message>, pending: List<PendingMessage>, runs: List<Run>, draft: String, busy: Boolean,
+fun ChatScreen(messages: List<Message>, pending: List<PendingMessage>, runs: List<Run>, draft: String, busy: Boolean, draftState: DraftSaveState,
                onDraft: (String) -> Unit, onSend: () -> Unit, onCancel: (String) -> Unit,
-               onRetry: (String) -> Unit, onDismiss: (String) -> Unit) {
+               onRetry: (String) -> Unit, onDismiss: (String) -> Unit, onRetryDraftSave: () -> Unit) {
     val active = runs.firstOrNull { !it.terminal }
     val scroll = rememberLazyListState()
     LaunchedEffect(messages.lastOrNull()?.text, pending.size) {
@@ -73,8 +73,17 @@ fun ChatScreen(messages: List<Message>, pending: List<PendingMessage>, runs: Lis
             TextButton(onClick = { onCancel(active.id) }, enabled = active.status != "cancel_requested") { Text("停止") }
         }
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(value = draft, onValueChange = onDraft, modifier = Modifier.weight(1f), placeholder = { Text("发送消息…") }, maxLines = 5)
-            Button(onClick = onSend, enabled = !busy && active == null && pending.isEmpty() && draft.isNotBlank() && draft.codePointCount(0, draft.length) <= 8000) { Text("发送") }
+            OutlinedTextField(value = draft, onValueChange = onDraft, modifier = Modifier.weight(1f),
+                enabled = draftState != DraftSaveState.LOADING, placeholder = { Text(if (draftState == DraftSaveState.LOADING) "正在恢复草稿…" else "发送消息…") }, maxLines = 5)
+            Button(onClick = onSend, enabled = !busy && draftState != DraftSaveState.LOADING && draftState != DraftSaveState.FAILED && active == null && pending.isEmpty() && draft.isNotBlank() && draft.codePointCount(0, draft.length) <= 8000) { Text("发送") }
         }
+        if (draftState == DraftSaveState.FAILED) TextButton(onClick = onRetryDraftSave, modifier = Modifier.padding(horizontal = 12.dp)) {
+            Text("草稿未保存，点击重试", color = MaterialTheme.colorScheme.error)
+        } else if (draft.isNotEmpty()) Text(when (draftState) {
+            DraftSaveState.LOADING -> "正在恢复草稿…"
+            DraftSaveState.SAVING -> "正在保存草稿…"
+            else -> "草稿已保存在此设备"
+        },
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, bottom = 8.dp))
     }
 }

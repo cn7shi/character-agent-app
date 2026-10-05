@@ -14,8 +14,18 @@ data class Outbox(val scope: String, val id: String, val conversationId: String,
 @Entity(tableName = "conversation_requests", primaryKeys = ["scope", "characterId"])
 data class ConversationRequest(val scope: String, val characterId: String, val requestKey: String)
 
+@Entity(tableName = "drafts", primaryKeys = ["scope", "conversationId"])
+data class DraftRow(val scope: String, val conversationId: String, val revision: String, val text: String)
+
 @Dao
 interface ClientDao {
+    @Query("SELECT * FROM drafts WHERE scope = :scope AND conversationId = :conversationId")
+    suspend fun draft(scope: String, conversationId: String): DraftRow?
+    @Upsert suspend fun saveDraft(row: DraftRow)
+    @Query("DELETE FROM drafts WHERE scope = :scope AND conversationId = :conversationId")
+    suspend fun clearDraft(scope: String, conversationId: String)
+    @Query("DELETE FROM drafts WHERE scope = :scope AND conversationId = :conversationId AND revision = :revision")
+    suspend fun consumeDraft(scope: String, conversationId: String, revision: String)
     @Query("SELECT * FROM snapshots WHERE scope = :scope AND kind = :kind ORDER BY sortKey DESC, id DESC")
     fun observe(scope: String, kind: String): Flow<List<Snapshot>>
     @Query("SELECT * FROM snapshots WHERE scope = :scope AND kind = :kind ORDER BY sortKey DESC, id DESC")
@@ -40,5 +50,7 @@ interface ClientDao {
     suspend fun deleteConversationRequest(scope: String, characterId: String)
 }
 
-@Database(entities = [Snapshot::class, Outbox::class, ConversationRequest::class], version = 1, exportSchema = true)
+// D26: additive migration generated from checked-in schemas; never discard pending requests on upgrade.
+@Database(entities = [Snapshot::class, Outbox::class, ConversationRequest::class, DraftRow::class],
+    version = 2, exportSchema = true, autoMigrations = [AutoMigration(from = 1, to = 2)])
 abstract class ClientDatabase : RoomDatabase() { abstract fun dao(): ClientDao }

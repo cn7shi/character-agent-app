@@ -78,6 +78,64 @@ class OfflineRepositoryTest {
     @After fun close() { database.close(); context.deleteDatabase(name) }
     private fun reopen() { database.close(); database = Room.databaseBuilder(context, ClientDatabase::class.java, name).build() }
 
+    @Test fun draftsSurviveReopenAndStayScoped() = runBlocking {
+        val first = MessageDraft("first", "  第一行\n第二行 🌙  ")
+        val second = MessageDraft("second", "另一会话")
+        repository().saveDraft("conversation", first)
+        repository().saveDraft("other", second)
+        repository("profile-b").saveDraft("conversation", MessageDraft("third", "另一身份"))
+        reopen()
+        backend.offline = true
+        assertEquals(first, repository().draft("conversation"))
+        assertEquals(second, repository().draft("other"))
+        assertEquals("另一身份", repository("profile-b").draft("conversation")?.text)
+        repository().saveDraft("conversation", MessageDraft("empty", ""))
+        reopen()
+        assertNull(repository().draft("conversation"))
+        assertEquals(second, repository().draft("other"))
+    }
+
+    @Test fun draftHandoffKeepsOriginalOutboxAfterLostResponse() = runBlocking {
+        val draft = MessageDraft("draft", "hello")
+        repository().saveDraft("conversation", draft)
+        backend.loseNextResponse = true
+        try { repository().send("conversation", draft.text, draft.revision); fail() } catch (_: RemoteFailure) { }
+        reopen()
+        assertNull(repository().draft("conversation"))
+        val pending = repository().pending("conversation").first().single()
+        repository().retry(pending.id)
+        assertEquals(backend.requests[0], backend.requests[1])
+        assertEquals(1, backend.writes)
+        assertNull(repository().draft("conversation"))
+    }
+
+    @Test fun olderSendCannotConsumeNewDraftWithIdenticalText() = runBlocking {
+        val latest = MessageDraft("new-edit", "hello")
+        repository().saveDraft("conversation", latest)
+        repository().send("conversation", "hello", "old-edit")
+        reopen()
+        assertEquals(latest, repository().draft("conversation"))
+    }
+
+    @Test fun invalidSubmissionKeepsDraft() = runBlocking {
+        val draft = MessageDraft("revision", "  \n  ")
+        repository().saveDraft("conversation", draft)
+        try { repository().send("conversation", draft.text, draft.revision); fail() } catch (_: IllegalArgumentException) { }
+        assertEquals(draft, repository().draft("conversation"))
+        assertTrue(repository().pending("conversation").first().isEmpty())
+        assertTrue(backend.requests.isEmpty())
+    }
+
+    @Test fun failedHandoffRollsBackOutboxAndRetainsDraft() = runBlocking {
+        val draft = MessageDraft("revision", "hello")
+        repository().saveDraft("conversation", draft)
+        database.openHelper.writableDatabase.execSQL("CREATE TRIGGER fail_handoff BEFORE DELETE ON drafts BEGIN SELECT RAISE(ABORT, 'test handoff failure'); END")
+        try { repository().send("conversation", draft.text, draft.revision); fail() } catch (_: android.database.sqlite.SQLiteException) { }
+        assertEquals(draft, repository().draft("conversation"))
+        assertTrue(repository().pending("conversation").first().isEmpty())
+        assertTrue(backend.requests.isEmpty())
+    }
+
     @Test fun localCancelClosesStalledStreamAndAllowsNextRun() = runBlocking {
         backend.supportsEvents = true
         backend.current = backend.sample("running", 4)

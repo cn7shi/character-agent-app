@@ -36,6 +36,13 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
     override fun runs(conversationId: String) = watch("runs:$conversationId", JsonCodec::run)
     override fun notes() = watch("notes", JsonCodec::note)
     override fun pending(conversationId: String) = dao.observePending(scope, conversationId).map { rows -> rows.map { PendingMessage(it.id, it.conversationId, it.text, it.error, it.blocked) } }
+    override suspend fun draft(conversationId: String) = dao.draft(scope, conversationId)?.let { MessageDraft(it.revision, it.text) }
+    override suspend fun saveDraft(conversationId: String, draft: MessageDraft) {
+        require(draft.revision.isNotBlank())
+        // Local editing must not wait for a slow network request holding the submission gate.
+        if (draft.text.isEmpty()) dao.clearDraft(scope, conversationId)
+        else dao.saveDraft(DraftRow(scope, conversationId, draft.revision, draft.text))
+    }
 
     private fun row(c: Character) = Snapshot(scope, "characters", c.id, JsonCodec.encode(c).toString(), c.name)
     private fun row(c: Conversation) = Snapshot(scope, "conversations", c.id, JsonCodec.encode(c).toString(), c.updatedAt)
@@ -84,14 +91,18 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
         conversation.id
     }
 
-    override suspend fun send(conversationId: String, text: String) = gate.withLock {
+    override suspend fun send(conversationId: String, text: String, draftRevision: String?) = gate.withLock {
         val normalized = text.trim()
         require(normalized.isNotEmpty() && normalized.codePointCount(0, normalized.length) <= 8000)
         check(dao.pending(scope, conversationId).isEmpty())
         check(dao.list(scope, "runs:$conversationId").none { !JsonCodec.run(JSONObject(it.payload)).terminal })
         val pending = Outbox(scope, UUID.randomUUID().toString(), conversationId, UUID.randomUUID().toString(), normalized)
         // D20: persist both IDs BEFORE HTTP; ambiguous failures reuse this exact request after restart.
-        dao.insertPending(pending)
+        db.withTransaction {
+            dao.insertPending(pending)
+            // D26: process death leaves either a draft or the original outbox identity, never a split handoff.
+            if (draftRevision != null) dao.consumeDraft(scope, conversationId, draftRevision)
+        }
         submit(pending)
     }
     override suspend fun retry(messageId: String) = gate.withLock {

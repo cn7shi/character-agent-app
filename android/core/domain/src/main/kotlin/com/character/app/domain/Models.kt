@@ -15,6 +15,8 @@ data class Run(val id: String, val conversationId: String, val status: String, v
 }
 data class Note(val id: String, val conversationId: String, val title: String, val content: String, val createdAt: String)
 data class PendingMessage(val id: String, val conversationId: String, val text: String, val error: String?, val blocked: Boolean)
+data class MessageDraft(val revision: String, val text: String)
+enum class DraftSaveState { LOADING, SAVING, SAVED, FAILED }
 data class Page<T>(val items: List<T>, val nextCursor: String?)
 
 /** D18: screens depend on these business objects, never Room rows or transport JSON. */
@@ -25,11 +27,14 @@ interface CharacterRepository {
     fun pending(conversationId: String): Flow<List<PendingMessage>>
     fun runs(conversationId: String): Flow<List<Run>>
     fun notes(): Flow<List<Note>>
+    suspend fun draft(conversationId: String): MessageDraft?
+    suspend fun saveDraft(conversationId: String, draft: MessageDraft)
     suspend fun refreshHome()
     suspend fun refreshConversation(conversationId: String)
     suspend fun refreshNotes()
     suspend fun createConversation(characterId: String): String
-    suspend fun send(conversationId: String, text: String)
+    /** If supplied, consume only this draft revision in the same transaction as the outbox insert. */
+    suspend fun send(conversationId: String, text: String, draftRevision: String? = null)
     suspend fun retry(messageId: String)
     suspend fun dismiss(messageId: String)
     suspend fun poll(conversationId: String)

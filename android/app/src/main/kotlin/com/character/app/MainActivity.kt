@@ -60,8 +60,8 @@ class MainActivity : ComponentActivity() {
                     }
                 ) { padding ->
                     Box(Modifier.fillMaxSize().padding(padding)) {
-                        if (state.selected != null) ChatScreen(state.messages, state.pending, state.runs, state.draft, state.busy,
-                            model::draft, model::send, model::cancel, model::retry, model::dismiss)
+                        if (state.selected != null) ChatScreen(state.messages, state.pending, state.runs, state.draft, state.busy, state.draftState,
+                            model::draft, model::send, model::cancel, model::retry, model::dismiss, model::retryDraftSave)
                         else when (state.tab) {
                             "角色" -> CharactersScreen(state.characters, state.conversations, state.busy, model::create, model::open, model::refreshHome)
                             "笔记" -> NotesScreen(state.notes, state.busy, model::refreshNotes)
