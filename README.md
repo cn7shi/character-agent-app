@@ -4,7 +4,7 @@
 
 ## 当前进度
 
-阶段 6B2A 已完成本地草稿、发送交接和 Room 升级：输入按连接身份与会话保存，重开可恢复已落库内容，发送只消费对应编辑版本；旧消息与待发送请求在升级后保留。61 项 Android 测试通过，包含网络恢复、真实 SSE/Room 联调、离线草稿及旧库迁移；APK 构建与静态检查通过，并继续用 OpenCodeReview 委托复查。后端保持固定回复，不配置真实 AI 也可联调。设备验收、完整原型视觉、真实模型联调和 MCP 留待后续。
+阶段 6B2B 已建立可重复的设备调试流程，并完成六组 Android 15 模拟器检查：连接和加密凭证、聊天与笔记、草稿恢复/清空/发送交接、主题与身份隔离、停服后的缓存和原请求重试。设备截图发现的深色状态栏图标问题已修复。已有 61 项 Android 本机测试与 57 项后端测试，继续用 OpenCodeReview 委托复查。后端保持固定回复，不配置真实 AI 也可联调。完整设备验收、原型视觉、真实模型联调和 MCP 仍有后续工作。
 
 代码仓库：私有仓库 [cn7shi/character-agent-app](https://github.com/cn7shi/character-agent-app)。按阶段提交源码、接口和设计记录，运行数据与凭证留在本机。
 
@@ -20,8 +20,8 @@
 - [模型配置与凭证保护](docs/model-configuration.md)：本机配置、兼容范围、Git 检查与日志处理。
 - [无需 AI 的演示](docs/offline-demo.md)：两条固定回复、笔记示例与运行方法。
 - [网络可靠性](docs/network-reliability.md)：适配器边界、重试、恢复及能力范围。
-- [最新阶段报告](docs/stage-reports/06b2a-persistent-drafts.md)：本地草稿、升级、核验和未实现范围。
-- [设备验收清单](docs/device-acceptance.md)：手机或模拟器就绪后执行的步骤，当前待验收。
+- [最新阶段报告](docs/stage-reports/06b2b-device-debugging.md)：设备实跑、截图、修复与未覆盖范围。
+- [设备验收清单](docs/device-acceptance.md)：已验收和仍须验证的具体场景。
 - [OCR 委托审查](docs/stage-reports/06b1-ocr-review.md)：覆盖范围、4 项问题、修复与回归证据。
 - [设计决策记录](docs/decisions.md)：为什么这样写、取舍与未来调整条件。
 - [已实现接口](contracts/openapi-v1.json)：从当前代码生成的 OpenAPI。

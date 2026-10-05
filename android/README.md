@@ -2,7 +2,7 @@
 
 已建立 Kotlin/Compose 多模块工程、Room 缓存与待发送记录、HTTP/SSE 后端适配，以及角色、会话、聊天、笔记和连接设置页面。默认连接现有模拟后端，不需要真实 AI；首次加载与发送仍需要本机后端运行。
 
-这是一份开发版客户端。当前没有正式登录、后台自动发送或原型级视觉还原。网络恢复、本地草稿与数据库升级已完成本机测试，设备验收仍待进行。实际验证见 [阶段报告](../docs/stage-reports/06b2a-persistent-drafts.md)，策略详见 [网络可靠性](../docs/network-reliability.md)。
+这是一份开发版客户端。当前没有正式登录、后台自动发送或原型级视觉还原。网络恢复、本地草稿与数据库升级已完成本机测试，并已完成六组 Android 15 设备自动检查；完整设备验收仍有未覆盖项。实际验证见 [阶段报告](../docs/stage-reports/06b2b-device-debugging.md)，策略详见 [网络可靠性](../docs/network-reliability.md)。
 
 ## 构建
 
@@ -52,7 +52,23 @@ backend/.venv/Scripts/python.exe backend/scripts/check_android.py
 
 脚本创建隔离的本机模拟后端，运行 Kotlin 策略、网络、Room、迁移与 ViewModel 共 61 项测试。内存模拟和两种 HTTP 模式运行同一业务契约，真实 SSE 直接更新 Room，并发送两次聊天和一次笔记指令，核验落库、重开数据库和用户隔离；另覆盖草稿恢复、保存错误、发送交接回滚、旧库升级、模式切换、取消后的新任务监听及退出关库时序。凭证只从临时文件读取，不写源码、命令参数或日志；结束后清理测试服务和数据。需要本机网络、JDK/SDK、Python 开发环境及 Gradle 依赖下载权限。
 
-单独运行 `:core:domain:test :core:network:test :core:data:testDebugUnitTest :app:testDebugUnitTest` 时，不配置隔离后端的 3 项真实 HTTP 用例会跳过。Room 与 ViewModel 测试采用 Robolectric（API 34），不能代替手机上的 UI、输入法、Keystore 与生命周期验收。草稿复查见 [最新报告](../docs/stage-reports/06b2a-persistent-drafts.md)，网络阶段问题见 [前次 OCR 报告](../docs/stage-reports/06b1-ocr-review.md)；设备准备就绪后按 [验收清单](../docs/device-acceptance.md) 执行。
+单独运行 `:core:domain:test :core:network:test :core:data:testDebugUnitTest :app:testDebugUnitTest` 时，不配置隔离后端的 3 项真实 HTTP 用例会跳过。Room 与 ViewModel 测试采用 Robolectric（API 34），不能代替设备检查。草稿复查见 [草稿报告](../docs/stage-reports/06b2a-persistent-drafts.md)，设备进度见 [验收清单](../docs/device-acceptance.md)。
+
+### 设备自动检查
+
+启动专用模拟器并从 `adb devices` 确认序列号，安装后端开发依赖后，在仓库根目录执行（替换成实际设备）：
+
+```powershell
+backend/.venv/Scripts/python.exe backend/scripts/check_device.py --serial emulator-5580
+```
+
+脚本自动编译 `deviceCheck` 和对应测试包，通过 `-PdeviceChecks=true` 启用设备测试构建。普通 debug 构建及原有单元测试入口保持可用。需要 JDK 21、SDK 36、可用的 adb 设备和后端虚拟环境；SDK 不在默认位置时传入 `--sdk <SDK目录>`。`--skip-build` 仅用于已经重新编译过的测试包，不会自动确认源码是否改变。
+
+专用包名为 `com.character.app.devicecheck`，每轮重置它自己的测试数据；遇到没有脚本标记的同名包会停止。正常开发包 `com.character.app` 不受影响。检查点按顺序共享临时数据，必须由此脚本运行，不能将这六个测试随机排序单独批量运行。
+
+每轮使用独立模拟后端，自动验证连接和聊天、草稿恢复/清空/发送交接、笔记、主题、实时与兼容模式、开发身份隔离，以及停服后的缓存和原请求重试。凭证只经标准输入写入应用私有临时配置，结束后清除；设备日志先脱敏，截图不取凭证页。原始结果保存在被忽略的 `backend/.runtime/device-evidence-<UTC时间>/`，包含 `results.json`、逐项输出和六张截图。服务与转发会清理；专用应用保留安装以便下一轮复用。
+
+本次另建立了本机 `CharacterAgent_API35` AVD，使用已有 API 35 镜像，数据在忽略目录中，不提交 Git。自动化输入和生命周期操作不代表完整输入法/实体手机验收；仍须完成清单中的运行中强杀、回复中断流与取消、旧 APK 覆盖升级等检查。
 
 ## 模块边界
 

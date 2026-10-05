@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import psutil
 from urllib.error import HTTPError, URLError
 from urllib.request import build_opener, ProxyHandler, Request
 from uuid import uuid4
@@ -81,7 +82,23 @@ def server(directory, port):
             yield base
         finally:
             if process.poll() is None:
-                process.terminate()
+                # Windows venv Python may be a launcher with a child interpreter. Stopping only
+                # the launcher leaves uvicorn alive, invalidating offline tests and holding files.
+                if os.name == "nt":
+                    parent = psutil.Process(process.pid)
+                    owned = parent.children(recursive=True) + [parent]
+                    # Native termination is immediate; starting taskkill can let a short mock reply
+                    # finish before the intended crash, making the interruption test meaningless.
+                    for child in owned:
+                        try:
+                            child.kill()
+                        except psutil.NoSuchProcess:
+                            pass  # A child exiting between the snapshot and kill is already stopped.
+                    _, alive = psutil.wait_procs(owned, timeout=5)
+                    if alive:
+                        raise RuntimeError("Owned test server processes did not stop")
+                else:
+                    process.terminate()
                 try:
                     process.wait(timeout=10)
                 except subprocess.TimeoutExpired:

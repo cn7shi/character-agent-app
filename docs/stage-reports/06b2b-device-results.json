@@ -1,0 +1,53 @@
+{
+  "started_at": "20261005T141441Z",
+  "serial": "emulator-5580",
+  "package": "com.character.app.devicecheck",
+  "android": "15",
+  "api": "35",
+  "model": "Android SDK built for x86_64",
+  "display": "Physical size: 1080x2340",
+  "git_base": "4aa932614fd32d5ff21e1c2372c290f4e1976291",
+  "working_tree_changed": true,
+  "apk_sha256": "734c66b031f4c81c208841912158c8ff4aab2ed05dbd5cca36f630f19a06afe5",
+  "test_apk_sha256": "1c3033ede480a0154bc1676127d3e479739f9236fc7e789481a891673edd306b",
+  "backend_provider": "mock",
+  "network_fault": "stop isolated backend process, then restart same database",
+  "checkpoints": [
+    {
+      "name": "connectChatAndSaveDraft",
+      "passed": true,
+      "seconds": 12.84
+    },
+    {
+      "name": "restoreAndSendWithNewDraft",
+      "passed": true,
+      "seconds": 9.58
+    },
+    {
+      "name": "restoreNewDraftAndClear",
+      "passed": true,
+      "seconds": 6.74
+    },
+    {
+      "name": "clearedDraftNoteThemeModeAndIdentity",
+      "passed": true,
+      "seconds": 22.96
+    },
+    {
+      "name": "offlineCacheAndQueue",
+      "passed": true,
+      "seconds": 26.09
+    },
+    {
+      "name": "recoverOriginalRequest",
+      "passed": true,
+      "seconds": 7.28
+    }
+  ],
+  "passed": true,
+  "offline_port_closed": true,
+  "original_request_replay": "same id/key, HTTP 200, one input message",
+  "persisted_notes": 1,
+  "cleanup_complete": true,
+  "finished_at": "2026-10-05T14:16:12.893313+00:00"
+}

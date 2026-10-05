@@ -8,12 +8,14 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.view.WindowCompat
 import com.character.app.characters.CharactersScreen
 import com.character.app.chat.ChatScreen
 import com.character.app.designsystem.CharacterTheme
@@ -30,6 +32,12 @@ class MainActivity : ComponentActivity() {
             LifecycleEventEffect(Lifecycle.Event.ON_START) { model.foreground(true) }
             LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.foreground(false) }
             CharacterTheme(state.dark) {
+                // D27: the app theme may differ from the system theme; keep status icons readable.
+                SideEffect {
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = !state.dark
+                    }
+                }
                 BackHandler(state.selected != null) { model.back() }
                 Scaffold(
                     topBar = {
