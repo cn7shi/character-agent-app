@@ -19,12 +19,12 @@ def main():
             (directory / "android-endpoint.txt").write_text(endpoint, encoding="utf-8")
             result = subprocess.run(
                 [str(backend.parent / "android" / ("gradlew.bat" if os.name == "nt" else "gradlew")),
-                 ":core:domain:test", ":core:network:test", ":core:data:testDebugUnitTest", "--console=plain", "--rerun-tasks"],
+                 ":core:domain:test", ":core:network:test", ":core:data:testDebugUnitTest", ":app:testDebugUnitTest", "--console=plain", "--rerun-tasks"],
                 cwd=backend.parent / "android", env={**os.environ, "CHARACTER_ANDROID_TEST_DIR": str(directory)},
             )
             if result.returncode:
                 raise SystemExit(result.returncode)
-    print("Android transport, Room and real local backend checks passed; temporary server/data cleaned.")
+    print("Android transport, Room, ViewModel and real local backend checks passed; temporary server/data cleaned.")
 
 
 if __name__ == "__main__":

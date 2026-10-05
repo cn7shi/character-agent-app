@@ -4,7 +4,7 @@
 
 ## 当前进度
 
-阶段 6B1 已完成 Android 网络边界与恢复：业务适配器、有限重试、SSE 续接、事件/正文事务、查询回退及实时/兼容模式切换。39 项 Android 测试通过，包含内存与 HTTP 的共同契约、真实 SSE 写入 Room、断开恢复和实际笔记保存；APK 构建与静态检查通过。后端继续使用固定回复，不配置真实 AI 也可联调。持久草稿、设备交互验收、完整原型视觉、真实模型联调和 MCP 留待后续阶段。
+阶段 6B1 已完成 Android 网络边界与恢复：业务适配器、有限重试、SSE 续接、事件/正文事务、查询回退及实时/兼容模式切换。随后用 OpenCodeReview 委托模式审查，修复草稿清理、取消监听和退出关库问题；47 项 Android 测试通过，包含内存与 HTTP 的共同契约、真实 SSE 写入 Room、断开恢复和实际笔记保存；APK 构建与静态检查通过。后端继续使用固定回复，不配置真实 AI 也可联调。持久草稿、设备交互验收、完整原型视觉、真实模型联调和 MCP 留待后续阶段。
 
 代码仓库：私有仓库 [cn7shi/character-agent-app](https://github.com/cn7shi/character-agent-app)。按阶段提交源码、接口和设计记录，运行数据与凭证留在本机。
 
@@ -21,6 +21,7 @@
 - [无需 AI 的演示](docs/offline-demo.md)：两条固定回复、笔记示例与运行方法。
 - [网络可靠性](docs/network-reliability.md)：适配器边界、重试、恢复及能力范围。
 - [阶段报告](docs/stage-reports/06b1-network-reliability.md)：本次交付、核验和未实现范围。
+- [OCR 委托审查](docs/stage-reports/06b1-ocr-review.md)：覆盖范围、4 项问题、修复与回归证据。
 - [设计决策记录](docs/decisions.md)：为什么这样写、取舍与未来调整条件。
 - [已实现接口](contracts/openapi-v1.json)：从当前代码生成的 OpenAPI。
 - [推进计划](docs/roadmap.md)：每一步的范围与验收条件。

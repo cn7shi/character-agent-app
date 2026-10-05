@@ -18,15 +18,26 @@ data class ClientState(
     val runs: List<Run> = emptyList(), val draft: String = ""
 )
 
-class ClientViewModel(application: Application) : AndroidViewModel(application) {
-    private val vault = ConnectionVault(application)
-    private val database = Room.databaseBuilder(application, ClientDatabase::class.java, "character-client.db").build()
+class ClientViewModel internal constructor(
+    application: Application,
+    private val vault: ConnectionStore,
+    private val database: ClientDatabase,
+    private val backendFactory: (BackendConnection, ConnectionMode) -> BackendAdapter,
+    private val mainDispatcher: CoroutineDispatcher,
+) : AndroidViewModel(application) {
+    // Keep Android's normal factory entry point; tests replace storage/network, never real credentials.
+    constructor(application: Application) : this(application, ConnectionVault(application),
+        Room.databaseBuilder(application, ClientDatabase::class.java, "character-client.db").build(),
+        BackendFactory::connect, Dispatchers.Main.immediate)
     private var repository: CharacterRepository? = null
+    private var connectionScope: String? = null
     private var adapter: BackendAdapter? = null
-    private var session = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val lifetime = SupervisorJob()
+    private var session = CoroutineScope(SupervisorJob(lifetime) + mainDispatcher)
     private var chatJob: Job? = null
     private val foreground = MutableStateFlow(true)
-    private val drafts = mutableMapOf<String, String>()
+    private class Draft(val text: String)
+    private val drafts = mutableMapOf<String, Draft>()
     private val mutable = MutableStateFlow(ClientState(dark = vault.dark, polling = vault.mode == ConnectionMode.POLLING))
     val state = mutable.asStateFlow()
 
@@ -44,9 +55,11 @@ class ClientViewModel(application: Application) : AndroidViewModel(application) 
     private fun attach(connection: BackendConnection) {
         session.cancel()
         adapter?.close()
-        session = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        drafts.clear()
-        val backend = BackendFactory.connect(connection, vault.mode)
+        session = CoroutineScope(SupervisorJob(lifetime) + mainDispatcher)
+        // D25: changing transport within one profile must not discard unsent input.
+        if (connectionScope != connection.scope) drafts.clear()
+        connectionScope = connection.scope
+        val backend = backendFactory(connection, vault.mode)
         adapter = backend
         val repo = OfflineRepository(database, connection.scope, backend)
         repository = repo
@@ -63,6 +76,7 @@ class ClientViewModel(application: Application) : AndroidViewModel(application) 
         adapter?.close()
         adapter = null
         repository = null
+        connectionScope = null
         drafts.clear()
         mutable.value = ClientState(dark = vault.dark, polling = vault.mode == ConnectionMode.POLLING)
     }
@@ -78,7 +92,7 @@ class ClientViewModel(application: Application) : AndroidViewModel(application) 
         } catch (_: Exception) { mutable.update { it.copy(error = "无法切换连接方式，请重试。") } }
     }
     fun reconnectChat() { state.value.selected?.let(::open) }
-    fun draft(text: String) { state.value.selected?.let { drafts[it.id] = text }; mutable.update { it.copy(draft = text) } }
+    fun draft(text: String) { state.value.selected?.let { drafts[it.id] = Draft(text) }; mutable.update { it.copy(draft = text) } }
     fun back() { chatJob?.cancel(); mutable.update { it.copy(selected = null, messages = emptyList(), pending = emptyList(), runs = emptyList(), draft = "") } }
     fun refreshHome() = action { refreshHome() }
     fun refreshNotes() = action { refreshNotes() }
@@ -91,7 +105,7 @@ class ClientViewModel(application: Application) : AndroidViewModel(application) 
     fun open(conversation: Conversation) {
         val repo = repository ?: return
         chatJob?.cancel()
-        mutable.update { it.copy(selected = conversation, messages = emptyList(), pending = emptyList(), runs = emptyList(), draft = drafts[conversation.id].orEmpty()) }
+        mutable.update { it.copy(selected = conversation, messages = emptyList(), pending = emptyList(), runs = emptyList(), draft = drafts[conversation.id]?.text.orEmpty()) }
         chatJob = session.launch {
             launch {
                 combine(repo.messages(conversation.id), repo.pending(conversation.id), repo.runs(conversation.id)) { messages, pending, runs -> Triple(messages, pending, runs) }
@@ -116,11 +130,16 @@ class ClientViewModel(application: Application) : AndroidViewModel(application) 
         val current = state.value
         val conversation = current.selected ?: return
         if (current.busy || current.draft.isBlank()) return
+        val submitted = drafts[conversation.id] ?: return
         action {
-            try { send(conversation.id, current.draft) }
+            val previousPending = pending(conversation.id).first().map { it.id }.toSet()
+            var acknowledged = false
+            try { send(conversation.id, submitted.text); acknowledged = true }
             finally {
-                // Keep text on local validation failure, clear once it is either queued or acknowledged.
-                if (pending(conversation.id).first().isNotEmpty() || messages(conversation.id).first().any { it.role == "user" && it.text == current.draft.trim() }) {
+                // Only this submission can consume this edit. Re-typing even identical text creates a new Draft.
+                // Historical text matches or an already-existing outbox item are not an acknowledgement.
+                val queued = acknowledged || pending(conversation.id).first().any { it.id !in previousPending }
+                if (queued && repository === this && drafts[conversation.id] === submitted) {
                     drafts.remove(conversation.id)
                     if (state.value.selected?.id == conversation.id) mutable.update { it.copy(draft = "") }
                 }
@@ -149,5 +168,11 @@ class ClientViewModel(application: Application) : AndroidViewModel(application) 
             finally { if (repository === repo) mutable.update { it.copy(busy = false) } }
         }
     }
-    override fun onCleared() { session.cancel(); adapter?.close(); database.close() }
+    override fun onCleared() {
+        lifetime.cancel()
+        adapter?.close()
+        // Cancellation is asynchronous; include previous sessions still unwinding after a profile switch.
+        // Closing Room only after all children finish avoids racing an in-flight database query.
+        lifetime.invokeOnCompletion { database.close() }
+    }
 }

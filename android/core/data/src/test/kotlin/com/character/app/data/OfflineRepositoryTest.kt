@@ -78,6 +78,33 @@ class OfflineRepositoryTest {
     @After fun close() { database.close(); context.deleteDatabase(name) }
     private fun reopen() { database.close(); database = Room.databaseBuilder(context, ClientDatabase::class.java, name).build() }
 
+    @Test fun localCancelClosesStalledStreamAndAllowsNextRun() = runBlocking {
+        backend.supportsEvents = true
+        backend.current = backend.sample("running", 4)
+        val opened = CompletableDeferred<Unit>()
+        val closed = CompletableDeferred<Unit>()
+        val nextOpened = CompletableDeferred<Unit>()
+        backend.eventFlow = { flow {
+            if (backend.cursors.size == 1) {
+                try { opened.complete(Unit); awaitCancellation() }
+                finally { closed.complete(Unit) }
+            } else { nextOpened.complete(Unit); awaitCancellation() }
+        } }
+        val repo = repository()
+        val observation = launch { repo.observeConversation("conversation") }
+        try {
+            withTimeout(5000) { opened.await() }
+            repo.cancel("run")
+            withTimeout(1500) { closed.await() }
+            val next = backend.sample("running", 1).let { it.copy(id = "next", input = it.input.copy(id = "next-input", runId = "next", sequence = 3),
+                output = it.output.copy(id = "next-output", runId = "next", sequence = 4)) }
+            backend.current = next
+            repo.store(next)
+            withTimeout(1500) { nextOpened.await() }
+            assertEquals(listOf(4L, 1L), backend.cursors)
+        } finally { observation.cancelAndJoin() }
+    }
+
     @Test fun lostResponseThenRestartRetriesOriginalIdsAndCreatesOneArtifact() = runBlocking {
         backend.loseNextResponse = true
         try { repository().send("conversation", "记笔记：测试"); fail() } catch (_: RemoteFailure) { }

@@ -4,9 +4,8 @@ import androidx.room.withTransaction
 import com.character.app.domain.*
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -147,13 +146,14 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
         refreshConversation(conversationId)
         refreshNotes() // Also reconciles a tool committed just before process death or observation cancellation.
         val monitor = RunMonitor(remote)
-        while (true) {
-            currentCoroutineContext().ensureActive()
-            val active = runs(conversationId).first { list -> list.any { !it.terminal } }.first { !it.terminal }
-            monitor.follow(load = {
-                checkNotNull(dao.get(scope, "runs:$conversationId", active.id)).let { JsonCodec.run(JSONObject(it.payload)) }
-            }, save = ::store)
-            refreshNotes()
-        }
+        // D25: a cancel response can commit terminal state while the event socket stays silent.
+        // Observe the active ID so Room cancels that socket and starts the next run independently.
+        runs(conversationId).map { list -> list.firstOrNull { !it.terminal }?.id }
+            .distinctUntilChanged().collectLatest { activeId ->
+                if (activeId == null) refreshNotes()
+                else monitor.follow(load = {
+                    checkNotNull(dao.get(scope, "runs:$conversationId", activeId)).let { JsonCodec.run(JSONObject(it.payload)) }
+                }, save = ::store)
+            }
     }
 }

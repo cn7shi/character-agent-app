@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-05",
+  "tool": "Alibaba OpenCodeReview 1.12.12",
+  "mode": "delegate",
+  "reviewer": "Codex using OCR-resolved rules; no separate OCR model API",
+  "reviewed_commit": "5e0b8aafcc95cc5f15b6a03fa9560fb0eca30f83",
+  "total_changed_files": 32,
+  "summary": {
+    "total_files": 15,
+    "reviewed_files": 15,
+    "skipped_files": 0,
+    "coverage_rate": "100%",
+    "excluded_files": 17,
+    "confirmed_findings": 4,
+    "unfixed_findings": 0
+  },
+  "coverage": [
+    {
+      "path": "android/app/src/main/kotlin/com/character/app/ClientViewModel.kt",
+      "status": "modified",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/character/app/ConnectionVault.kt",
+      "status": "modified",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/character/app/MainActivity.kt",
+      "status": "modified",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "android/core/data/src/main/kotlin/com/character/app/data/HttpBackend.kt",
+      "status": "modified",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "android/core/data/src/main/kotlin/com/character/app/data/OfflineRepository.kt",
+      "status": "modified",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "android/core/domain/build.gradle.kts",
+      "status": "modified",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "android/core/domain/src/main/kotlin/com/character/app/domain/Models.kt",
+      "status": "modified",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "android/core/domain/src/main/kotlin/com/character/app/domain/Reliability.kt",
+      "status": "added",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "android/core/domain/src/main/kotlin/com/character/app/domain/RunMonitor.kt",
+      "status": "added",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "android/core/network/build.gradle.kts",
+      "status": "modified",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "android/core/network/src/main/kotlin/com/character/app/network/SseReader.kt",
+      "status": "added",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "android/core/network/src/main/kotlin/com/character/app/network/Transport.kt",
+      "status": "modified",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "android/feature/chat/src/main/kotlin/com/character/app/chat/ChatScreen.kt",
+      "status": "modified",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "android/feature/settings/src/main/kotlin/com/character/app/settings/SettingsScreen.kt",
+      "status": "modified",
+      "review_status": "reviewed"
+    },
+    {
+      "path": "backend/scripts/check_android.py",
+      "status": "modified",
+      "review_status": "reviewed"
+    }
+  ],
+  "excluded_files": [
+    {
+      "path": "README.md",
+      "status": "modified",
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "android/README.md",
+      "status": "modified",
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "android/core/data/README.md",
+      "status": "modified",
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "android/core/data/src/test/kotlin/com/character/app/data/AdapterContract.kt",
+      "status": "added",
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "android/core/data/src/test/kotlin/com/character/app/data/OfflineRepositoryTest.kt",
+      "status": "modified",
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "android/core/data/src/test/kotlin/com/character/app/data/RealBackendTest.kt",
+      "status": "modified",
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "android/core/domain/README.md",
+      "status": "modified",
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "android/core/domain/src/test/kotlin/com/character/app/domain/ReliabilityTest.kt",
+      "status": "added",
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "android/core/domain/src/test/kotlin/com/character/app/domain/RunMonitorTest.kt",
+      "status": "added",
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "android/core/network/README.md",
+      "status": "modified",
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "android/core/network/src/test/kotlin/com/character/app/network/EventTransportTest.kt",
+      "status": "added",
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "docs/architecture.md",
+      "status": "modified",
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/data-model.md",
+      "status": "modified",
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/decisions.md",
+      "status": "modified",
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/network-reliability.md",
+      "status": "added",
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/roadmap.md",
+      "status": "modified",
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/stage-reports/06b1-network-reliability.md",
+      "status": "added",
+      "exclude_reason": "unsupported_ext"
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "path": "android/app/src/main/kotlin/com/character/app/ClientViewModel.kt",
+      "start_line": 73,
+      "end_line": 76,
+      "category": "bug",
+      "severity": "medium",
+      "priority": "P2",
+      "content": "同一连接范围切换实时/兼容模式时，attach 无条件清空草稿，导致未发送输入丢失。仅在连接范围改变或断开时清空。",
+      "status": "fixed",
+      "regression_test": "modeSwitchKeepsDraftInSameProfile",
+      "before_fix": "expected draft text, actual empty string",
+      "after_fix": "passed"
+    },
+    {
+      "id": "F2",
+      "path": "android/app/src/main/kotlin/com/character/app/ClientViewModel.kt",
+      "start_line": 123,
+      "end_line": 125,
+      "category": "bug",
+      "severity": "medium",
+      "priority": "P2",
+      "content": "旧发送结果无条件清空当前草稿，覆盖请求等待期间的新输入；历史同文或旧待发送项不能证明本次已受理。使用编辑对象身份和本次确认/新增待发送 ID 判断。此逻辑在 6B1 之前已存在。",
+      "status": "fixed",
+      "regression_test": "delayedSendDoesNotEraseNewTyping",
+      "before_fix": "expected new draft text, actual empty string",
+      "after_fix": "passed"
+    },
+    {
+      "id": "F3",
+      "path": "android/core/data/src/main/kotlin/com/character/app/data/OfflineRepository.kt",
+      "start_line": 152,
+      "end_line": 155,
+      "category": "bug",
+      "severity": "medium",
+      "priority": "P2",
+      "content": "取消响应已将 Room 更新为终态时，静默事件流仍阻塞 follow，下一轮任务无法及时开始观察。监听活动任务 ID，并在变化时取消旧订阅。",
+      "status": "fixed",
+      "regression_test": "localCancelClosesStalledStreamAndAllowsNextRun",
+      "before_fix": "stream closure wait timed out after local terminal cancellation",
+      "after_fix": "passed; next run subscribed from its own cursor"
+    },
+    {
+      "id": "F4",
+      "path": "android/app/src/main/kotlin/com/character/app/ClientViewModel.kt",
+      "start_line": 152,
+      "end_line": 152,
+      "category": "bug",
+      "severity": "medium",
+      "priority": "P2",
+      "content": "协程取消并不等待查询结束，onCleared 立即关闭 Room 会与后台查询竞争。测试日志出现连接池已关闭异常。用共同父任务覆盖所有新旧会话，全部完成后再关库。此关闭时序在 6B1 之前已存在。",
+      "status": "fixed",
+      "regression_test": "clearingWaitsForSessionCleanupBeforeClosingDatabase",
+      "before_fix": "database was closed before cancelled session cleanup finished",
+      "after_fix": "passed; ViewModel test stderr empty"
+    }
+  ],
+  "validation": {
+    "command": "backend/.venv/Scripts/python.exe backend/scripts/check_android.py",
+    "tests": 47,
+    "failures": 0,
+    "skipped": 0,
+    "device_validation": false,
+    "real_model_validation": false,
+    "scope": "latest network-stage commit and related context, not a full repository security audit"
+  }
+}

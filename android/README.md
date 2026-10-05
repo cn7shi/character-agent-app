@@ -38,7 +38,7 @@
 - 任务、消息与恢复序号在同一 Room 事务保存，较旧或相同序号不能覆盖新状态，终态保持不变。重新进入会话查询持久记录，不重新创建已受理任务。
 - 深浅色切换只替换颜色，业务数据和任务不变。完整视觉主题、第二种聊天布局在阶段 7 实施。
 
-草稿当前仅在 ViewModel 中按会话保存，旋转时保留，进程退出后不承诺恢复。尚无离线创建会话、消息编辑、笔记修改/删除、缓存清理与正式账号切换流程。
+草稿当前仅在 ViewModel 中按会话保存，旋转及同一连接范围的模式切换时保留；旧发送结果不会清掉后续输入。进程退出后不承诺恢复。尚无离线创建会话、消息编辑、笔记修改/删除、缓存清理与正式账号切换流程。
 
 ## 验证
 
@@ -48,9 +48,9 @@
 backend/.venv/Scripts/python.exe backend/scripts/check_android.py
 ```
 
-脚本创建隔离的本机模拟后端，运行 Kotlin 策略、网络与 Room 共 39 项测试。内存模拟和两种 HTTP 模式运行同一业务契约，真实 SSE 直接更新 Room，并发送两次聊天和一次笔记指令，核验落库、重开数据库和用户隔离。凭证只从临时文件读取，不写源码、命令参数或日志；结束后清理测试服务和数据。需要本机网络、JDK/SDK、Python 开发环境及 Gradle 依赖下载权限。
+脚本创建隔离的本机模拟后端，运行 Kotlin 策略、网络、Room 与 ViewModel 共 47 项测试。内存模拟和两种 HTTP 模式运行同一业务契约，真实 SSE 直接更新 Room，并发送两次聊天和一次笔记指令，核验落库、重开数据库和用户隔离；另覆盖草稿编辑、模式切换、取消后的新任务监听及退出关库时序。凭证只从临时文件读取，不写源码、命令参数或日志；结束后清理测试服务和数据。需要本机网络、JDK/SDK、Python 开发环境及 Gradle 依赖下载权限。
 
-单独运行 `:core:domain:test :core:network:test :core:data:testDebugUnitTest` 时，不配置隔离后端的 3 项真实 HTTP 用例会跳过。Room 测试采用 Robolectric（API 34），不能代替手机上的 UI、输入法、Keystore 与生命周期验收。
+单独运行 `:core:domain:test :core:network:test :core:data:testDebugUnitTest :app:testDebugUnitTest` 时，不配置隔离后端的 3 项真实 HTTP 用例会跳过。Room 与 ViewModel 测试采用 Robolectric（API 34），不能代替手机上的 UI、输入法、Keystore 与生命周期验收。最新审查与回归见 [OCR 报告](../docs/stage-reports/06b1-ocr-review.md)。
 
 ## 模块边界
 
