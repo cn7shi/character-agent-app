@@ -1,0 +1,32 @@
+{
+  "started_at": "20261005T151552Z",
+  "serial": "emulator-5580",
+  "package": "com.character.app.devicecheck",
+  "android": "15",
+  "api": "35",
+  "model": "Android SDK built for x86_64",
+  "display": "Physical size: 1080x2340",
+  "git_base": "3b3ec804efd82cedc2eb1452a43b19f8a48255ff",
+  "working_tree_changed": true,
+  "apk_sha256": "b4589210cfe07cd66b1d2e36212f4218529fed993038763339bf29ab159683e3",
+  "test_apk_sha256": "7f64bdf3cb9bd6c6a463094e608fa2884aafaa3a801685f8656f0865cb60f9f4",
+  "backend_provider": "mock",
+  "network_fault": "not injected in this scenario",
+  "scenario": "characters",
+  "checkpoints": [
+    {
+      "name": "createCharacterAndChat",
+      "passed": true,
+      "seconds": 16.85
+    },
+    {
+      "name": "editDeleteCharacterAndContinue",
+      "passed": true,
+      "seconds": 17.73
+    }
+  ],
+  "passed": true,
+  "character_management": "created; reopened; edited; delete cancelled then confirmed; private; old chat and tool permission retained",
+  "cleanup_complete": true,
+  "finished_at": "2026-10-05T15:16:30.670698+00:00"
+}

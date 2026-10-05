@@ -7,10 +7,10 @@
 | 数据 | 服务端 | 手机本地 | 对齐原则 |
 | --- | --- | --- | --- |
 | 用户与身份 | 用户记录与认证关联 | 当前账号必要资料 | 服务端解析身份，不信任请求体传入的用户编号 |
-| 角色 | 已发布资料、人设版本与允许的能力 | 缓存可展示的角色资料 | 按标识和版本更新；私有提示词不下发 |
+| 角色 | 已发布资料、人设版本、所有者与允许的能力 | 展示资料；所有者编辑内容及已提交待确认保存 | 按标识和版本更新；私有人设仅通过所有者编辑接口返回 |
 | 会话与消息 | 账号内已确认记录 | 最近记录、发送状态与待发送消息 | 稳定消息标识与会话序号，重试去重 |
 | 在线任务与工具记录 | 执行状态、结果与事件 | 当前页面需要的状态快照 | 服务端负责执行；客户端不能把任务状态改成成功 |
-| 笔记 | 工具实际保存的内容与来源 | 计划缓存笔记列表和详情 | 服务端按用户隔离，可按来源会话筛选 |
+| 笔记 | 工具实际保存的内容与来源 | 缓存笔记列表和详情 | 服务端按用户隔离，可按来源会话筛选 |
 | 草稿 | 首版不保存 | 每个账号和会话的输入草稿 | 只在本机保存 |
 | 记忆 | 后续保存有明确用户和角色范围的记忆 | 只缓存用户可查看的必要内容 | 默认角色内隔离，跨角色共享另行设计 |
 | 主题与临时界面状态 | 首版不保存 | 简单设置存储或临时状态 | 不与聊天同步绑定 |
@@ -22,7 +22,7 @@
 
 - 资源 ID 使用 UUID 字符串；接口字段使用 `snake_case`。
 - 时间使用 UTC 的 ISO 8601 字符串，界面负责按用户时区显示。
-- `version` 是服务端递增整数，用于识别较新的记录；可修改接口引入时再落实并发更新条件。
+- `version` 是服务端递增整数；角色 PUT 使用 expected_version 防止旧表单覆盖较新资料，相同版本与内容重试不重复发布。
 - 列表使用不透明游标，默认 20 条，上限 100 条。
 - 数量保存为整数；“96.4 万”等显示文本由界面格式化。
 - 每个用户资源的读取和写入均检查用户归属，不能只凭 UUID 访问。
@@ -33,8 +33,8 @@
 | 对象 | 主要字段 | 约束与用途 |
 | --- | --- | --- |
 | `users` | `id`、`display_name`、`created_at` | 先提供明确的用户范围，真实账号认证后续接入 |
-| `characters` | `id`、`name`、`summary`、`avatar_asset_id`、`background_asset_id`、`version`、`created_at`、`updated_at` | 首批为服务端预置角色；公开展示数据与私有设定分开 |
-| `character_revisions` | `id`、`character_id`、`version`、`system_prompt`、`allowed_tool_ids` | 私有、不可变的人设版本；同一角色版本号唯一 |
+| `characters` | `id`、`name`、`summary`、`avatar_asset_id`、`background_asset_id`、`version`、`created_at`、`updated_at`、`owner_id`、`deleted_at` | owner_id 为空是内置角色，否则仅所有者可见；删除标记阻止新会话但保留历史关联 |
+| `character_revisions` | `id`、`character_id`、`version`、`name`、`system_prompt`、`allowed_tool_ids` | 不可变的人设版本，包含当时名称；同一角色版本号唯一 |
 | `conversations` | `id`、`user_id`、`character_id`、`character_revision_id`、`title`、`version`、`created_at`、`updated_at` | 首版每个会话固定一个角色和设定版本；同一用户可与同一角色开启多个会话 |
 | `messages` | `id`、`conversation_id`、`user_id`、`run_id`、`client_message_id`、`sequence`、`role`、`blocks`、`status`、`created_at`、`updated_at` | 角色为 `user` 或 `assistant`；工具执行记录单独保存 |
 | `runs` | `id`、`conversation_id`、`user_id`、`input_message_id`、`output_message_id`、`executor`、`model_name`、`is_simulated`、`status`、`last_event_sequence`、`error_code`、`error_message`、`created_at`、`updated_at` | 首版一个输入对应一个回复，执行归属固定为 `server`，显式区分模拟与真实模型 |
@@ -89,6 +89,8 @@
 ## 客户端数据对象
 
 Room 阶段 6A 实际保存 `snapshots`、`outbox` 与 `conversation_requests`。`snapshots` 以 `(scope, kind, id)` 作主键，保存领域快照的内部 JSON 与排序键；kind 区分角色、会话、消息、任务和笔记。领域对象、HTTP 响应与 Room 行通过 data 模块转换。当前不做本地全文检索，后续按需要拆分专用表，导出的 schema 用于迁移。
+
+阶段 6C1 在 snapshots 新增内部 kind `character_write`，每个 scope 至多一份待确认角色保存，包含固定角色 ID、基准版本与完整内容。请求成功时与角色快照一同事务提交并清除意图；失败保留，重新打开后可重试。未点击保存的表单仍是 ViewModel 状态。列表只有完整分页成功才替换角色缓存，避免离线清空；删除不清除旧聊天。Room 结构仍为 schema 2。
 
 每条记录都有连接范围 `scope`，当前由服务地址与访问凭证指纹产生，原始凭证不进 Room。切换连接后界面与观察任务一起切换，不能显示上一范围的数据。正式认证后使用服务端验证的稳定账号标识。
 

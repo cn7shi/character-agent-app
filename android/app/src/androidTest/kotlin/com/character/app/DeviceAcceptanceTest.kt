@@ -338,4 +338,60 @@ class DeviceAcceptanceTest {
         waitFor(hasText("旧版待发送消息"))
         screenshot("12-upgraded-recovered")
     }
+
+    private fun characterField(label: String, text: String) {
+        ui.onNode(hasSetTextAction() and hasText(label)).performScrollTo().performTextReplacement(text)
+    }
+
+    @Test fun createCharacterAndChat() {
+        connect(config.getString("tokenA"), existing = false)
+        click("创建角色")
+        waitFor(hasText("角色名称"))
+        characterField("角色名称", "设备自建 · 晚风")
+        characterField("角色简介", "陪你整理今天的小事")
+        characterField("角色人设", "你是晚风，温和且简洁，喜欢听人分享日常。")
+        ui.onNode(isToggleable()).performScrollTo().performClick()
+        ui.onNode(hasSetTextAction() and hasText("角色名称")).performScrollTo()
+        screenshot("13-character-editor")
+        ui.onNode(hasText("保存角色") and hasClickAction()).performScrollTo()
+        click("保存角色")
+        waitFor(hasText("设备自建 · 晚风"))
+        screenshot("14-created-character")
+        // Own role is pinned by name; avoid selecting one of the two built-in cards.
+        ui.onNode(hasText("开启新对话") and hasAnyAncestor(hasTestTag("character-card") and hasAnyDescendant(hasText("设备自建 · 晚风"))) and hasClickAction())
+            .performScrollTo().performClick()
+        waitFor(hasSetTextAction())
+        send("记笔记：自建角色笔记；第一次聊天")
+        waitFor(hasText("【模拟回复】已保存笔记《自建角色笔记》，可以在笔记列表查看。"))
+        completed()
+    }
+
+    @Test fun editDeleteCharacterAndContinue() {
+        waitFor(hasText("设备自建 · 晚风"))
+        ui.onNode(hasText("编辑") and hasClickAction()).performScrollTo()
+        click("编辑")
+        waitFor(hasText("角色人设"))
+        ui.onNode(hasSetTextAction() and hasText("角色人设")).assertTextContains("你是晚风，温和且简洁，喜欢听人分享日常。")
+        characterField("角色名称", "设备自建 · 晨光")
+        characterField("角色简介", "修改后的简介")
+        characterField("角色人设", "你是晨光，活泼开朗。")
+        ui.onNode(isToggleable()).performScrollTo().performClick()
+        ui.onNode(hasText("保存角色") and hasClickAction()).performScrollTo()
+        click("保存角色")
+        waitFor(hasText("设备自建 · 晨光"))
+        screenshot("15-edited-character")
+        ui.onNode(hasText("删除") and hasClickAction()).performScrollTo()
+        click("删除")
+        waitFor(hasText("删除角色？"))
+        click("取消")
+        waitFor(hasText("设备自建 · 晨光"))
+        click("删除")
+        click("确认删除")
+        ui.waitUntil(10_000) { ui.onAllNodes(hasText("设备自建 · 晨光")).fetchSemanticsNodes().isEmpty() }
+        openChat()
+        send("记笔记：删除角色后；旧对话仍保留原笔记权限")
+        waitFor(hasText("【模拟回复】已保存笔记《删除角色后》，可以在笔记列表查看。"))
+        completed()
+        screenshot("16-deleted-role-existing-chat")
+    }
 }

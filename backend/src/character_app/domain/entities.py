@@ -16,6 +16,17 @@ class Character:
     background_asset_id: str | None
     version: int
     created_at: str
+    editable: bool = False
+
+
+@dataclass(frozen=True)
+class CharacterDefinition:
+    id: str
+    name: str
+    summary: str
+    system_prompt: str
+    notes_enabled: bool
+    version: int
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,10 @@ package com.character.app.domain
 
 import kotlinx.coroutines.flow.Flow
 
-data class Character(val id: String, val name: String, val summary: String, val version: Int)
+data class Character(val id: String, val name: String, val summary: String, val version: Int, val editable: Boolean = false)
+/** version is the expected saved version; zero denotes a new, client-assigned ID. */
+data class CharacterDraft(val id: String, val name: String, val summary: String, val systemPrompt: String,
+                          val notesEnabled: Boolean, val version: Int)
 data class Conversation(val id: String, val characterId: String, val title: String, val updatedAt: String)
 data class MessageBlock(val kind: String, val text: String)
 data class Message(val id: String, val conversationId: String, val runId: String, val sequence: Long,
@@ -21,6 +24,11 @@ data class Page<T>(val items: List<T>, val nextCursor: String?)
 
 /** D18: screens depend on these business objects, never Room rows or transport JSON. */
 interface CharacterRepository {
+    fun pendingCharacter(): Flow<CharacterDraft?>
+    suspend fun characterDefinition(id: String): CharacterDraft
+    suspend fun saveCharacter(draft: CharacterDraft)
+    suspend fun reloadCharacter(id: String): CharacterDraft?
+    suspend fun deleteCharacter(id: String)
     fun characters(): Flow<List<Character>>
     fun conversations(): Flow<List<Conversation>>
     fun messages(conversationId: String): Flow<List<Message>>
@@ -45,6 +53,9 @@ interface CharacterRepository {
 
 /** The backend protocol can change without changing the repository or presentation contracts. */
 interface BackendGateway {
+    suspend fun characterDefinition(id: String): CharacterDraft = throw BackendFailure(FailureKind.UNSUPPORTED)
+    suspend fun saveCharacter(draft: CharacterDraft): CharacterDraft = throw BackendFailure(FailureKind.UNSUPPORTED)
+    suspend fun deleteCharacter(id: String): Unit = throw BackendFailure(FailureKind.UNSUPPORTED)
     suspend fun characters(cursor: String?): Page<Character>
     suspend fun conversations(cursor: String?): Page<Conversation>
     suspend fun messages(conversationId: String, cursor: String?): Page<Message>
@@ -57,6 +68,7 @@ interface BackendGateway {
 
 /** Protocol-neutral boundary. Unsupported capabilities must be declared, not silently emulated. */
 interface BackendAdapter : BackendGateway, AutoCloseable {
+    val supportsCharacterManagement: Boolean get() = false
     val supportsEvents: Boolean
     fun events(runId: String, afterSequence: Long): Flow<RunEvent>
 }

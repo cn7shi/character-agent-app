@@ -72,7 +72,7 @@ def create_app(settings: Settings | None = None, *, model: TextModel | None = No
                             await service.close()
 
     app = FastAPI(
-        title="Character App API", version="0.5.0", lifespan=lifespan,
+        title="Character App API", version="0.6.0", lifespan=lifespan,
         description="Local development chat with fixed demo replies, bounded tool execution and persisted notes. Optional compatible text provider; live model tool calling is not integrated.",
         docs_url="/docs" if settings.dev_auth else None,
         redoc_url=None,

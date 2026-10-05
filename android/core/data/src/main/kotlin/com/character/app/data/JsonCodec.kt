@@ -4,7 +4,10 @@ import com.character.app.domain.*
 import org.json.JSONObject
 
 internal object JsonCodec {
-    fun character(o: JSONObject) = Character(o.getString("id"), o.getString("name"), o.getString("summary"), o.getInt("version"))
+    fun character(o: JSONObject) = Character(o.getString("id"), o.getString("name"), o.getString("summary"), o.getInt("version"), o.optBoolean("editable", false))
+    fun characterDraft(o: JSONObject) = CharacterDraft(o.getString("id"), o.getString("name"), o.getString("summary"), o.getString("system_prompt"), o.getBoolean("notes_enabled"), o.getInt("version"))
+    fun encode(v: CharacterDraft) = JSONObject().put("id", v.id).put("name", v.name).put("summary", v.summary)
+        .put("system_prompt", v.systemPrompt).put("notes_enabled", v.notesEnabled).put("version", v.version)
     fun conversation(o: JSONObject) = Conversation(o.getString("id"), o.getString("character_id"), o.getString("title"), o.getString("updated_at"))
     fun message(o: JSONObject): Message {
         val blocks = o.getJSONArray("blocks")
@@ -21,7 +24,7 @@ internal object JsonCodec {
         val items = o.getJSONArray("items")
         return Page((0 until items.length()).map { read(items.getJSONObject(it)) }, if (o.isNull("next_cursor")) null else o.getString("next_cursor"))
     }
-    fun encode(v: Character) = JSONObject().put("id", v.id).put("name", v.name).put("summary", v.summary).put("version", v.version)
+    fun encode(v: Character) = JSONObject().put("id", v.id).put("name", v.name).put("summary", v.summary).put("version", v.version).put("editable", v.editable)
     fun encode(v: Conversation) = JSONObject().put("id", v.id).put("character_id", v.characterId).put("title", v.title).put("updated_at", v.updatedAt)
     fun encode(v: Message) = JSONObject().put("id", v.id).put("conversation_id", v.conversationId).put("run_id", v.runId)
         .put("sequence", v.sequence).put("role", v.role).put("blocks", org.json.JSONArray().apply { v.blocks.forEach { put(JSONObject().put("type", it.kind).put("text", it.text)) } })

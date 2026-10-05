@@ -20,6 +20,15 @@ object BackendFactory {
 
 class HttpBackend(private val transport: HttpRequests, private val eventTransport: HttpEvents? = null,
                   private val release: () -> Unit = {}) : BackendAdapter {
+    override val supportsCharacterManagement = true
+    override suspend fun characterDefinition(id: String) = decode { JsonCodec.characterDraft(JSONObject(transport.request("GET", "/v1/characters/$id/definition"))) }
+    override suspend fun saveCharacter(draft: CharacterDraft) = decode {
+        val body = JsonCodec.encode(draft).apply { remove("id"); remove("version"); put("expected_version", draft.version) }
+        JsonCodec.characterDraft(JSONObject(transport.request("PUT", "/v1/characters/${draft.id}", body.toString())))
+    }
+    override suspend fun deleteCharacter(id: String) { decode {
+        if (!JSONObject(transport.request("DELETE", "/v1/characters/$id")).getBoolean("deleted")) throw BackendFailure(FailureKind.PROTOCOL)
+    } }
     override val supportsEvents get() = eventTransport != null
     override fun close() = release()
     private inline fun <T> decode(read: () -> T): T = try { read() }

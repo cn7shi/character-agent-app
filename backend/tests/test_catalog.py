@@ -70,7 +70,7 @@ class CatalogTests(unittest.TestCase):
         second = self.client.get("/v1/characters", params={"limit": 1, "cursor": first["next_cursor"]}, headers=self.auth_a).json()
         self.assertEqual({first["items"][0]["id"], second["items"][0]["id"]}, {CHARACTER_A, CHARACTER_B})
         self.assertIsNone(second["next_cursor"])
-        public_fields = {"id", "name", "summary", "avatar_asset_id", "background_asset_id", "version"}
+        public_fields = {"id", "name", "summary", "avatar_asset_id", "background_asset_id", "version", "editable"}
         self.assertEqual(set(first["items"][0]), public_fields)
         detail = self.client.get(f"/v1/characters/{CHARACTER_A}", headers=self.auth_a)
         self.assertEqual(detail.status_code, 200)
@@ -216,8 +216,8 @@ class CatalogTests(unittest.TestCase):
 
     def test_openapi_matches_implemented_operations_and_errors(self):
         schema = self.client.get("/openapi.json").json()
-        operations = {(method.upper(), path) for path, methods in schema['paths'].items() for method in methods if method in {'get', 'post'}}
-        self.assertEqual(len(operations), 13)
+        operations = {(method.upper(), path) for path, methods in schema['paths'].items() for method in methods if method in {'get', 'post', 'put', 'delete'}}
+        self.assertEqual(len(operations), 16)
         self.assertIn(("POST", "/v1/conversations/{conversation_id}/runs"), operations)
         for path, methods in schema["paths"].items():
             if path == "/health":

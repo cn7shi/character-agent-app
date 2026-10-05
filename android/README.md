@@ -29,6 +29,10 @@
 
 ## 当前交互与恢复
 
+角色页点“创建角色”，填写名称（1–100 字）、简介（0–500 字）和人设（1–8000 字），可开启“允许保存笔记”。保存后卡片显示“我的角色 · 仅自己可见”，可开聊、编辑、删除。删除有确认并保留旧对话；旧对话使用创建时的人设与能力，改动用于新对话。内置角色不可修改。固定模拟回复不会因为填写了人设就变成真实人设化 AI。
+
+角色保存失败后显示“继续确认角色保存”，原 ID、版本和内容已经留在 Room，重开后可重试。待确认内容不能直接修改；已有角色可明确放弃改动、重新读取服务端版本。点击保存之前的表单不提供跨进程恢复。头像与背景上传、公开分享、个人资料管理尚未完成。
+
 - 角色列表、会话、已获取消息和笔记写入 Room，离线可查看。列表会读完后端分页并按 ID 合并；当前面向小规模开发数据。
 - 发送前保存消息标识、请求键和确认状态。可恢复故障自动尝试最多 3 次，总时限 25 秒；失败后保留待发送项供手动重试，不会换新键重新生成。
 - 首次明确拒绝受理的请求可以从待发送区移除。发生过结果不明的请求必须用原键核对，即使后续遇到拒绝也不能据此认定第一次没成功。
@@ -50,9 +54,9 @@
 backend/.venv/Scripts/python.exe backend/scripts/check_android.py
 ```
 
-脚本创建隔离的本机模拟后端，运行 Kotlin 策略、网络、Room、迁移与 ViewModel 共 61 项测试。内存模拟和两种 HTTP 模式运行同一业务契约，真实 SSE 直接更新 Room，并发送两次聊天和一次笔记指令，核验落库、重开数据库和用户隔离；另覆盖草稿恢复、保存错误、发送交接回滚、旧库升级、模式切换、取消后的新任务监听及退出关库时序。凭证只从临时文件读取，不写源码、命令参数或日志；结束后清理测试服务和数据。需要本机网络、JDK/SDK、Python 开发环境及 Gradle 依赖下载权限。
+脚本创建隔离的本机模拟后端，运行 Kotlin 策略、网络、Room、迁移与 ViewModel 共 65 项测试。内存模拟和两种 HTTP 模式运行同一聊天业务契约，真实 SSE 直接更新 Room，并发送聊天和笔记指令，核验落库、重开数据库和用户隔离；另覆盖草稿、发送交接、旧库升级、模式切换、取消、退出时序，以及角色待确认保存恢复、缓存删除、冲突重读和两种 HTTP 模式的角色管理。凭证只从临时文件读取，不写源码、命令参数或日志；结束后清理测试服务和数据。需要本机网络、JDK/SDK、Python 开发环境及 Gradle 依赖下载权限。
 
-单独运行 `:core:domain:test :core:network:test :core:data:testDebugUnitTest :app:testDebugUnitTest` 时，不配置隔离后端的 3 项真实 HTTP 用例会跳过。Room 与 ViewModel 测试采用 Robolectric（API 34），不能代替设备检查。草稿复查见 [草稿报告](../docs/stage-reports/06b2a-persistent-drafts.md)，设备进度见 [验收清单](../docs/device-acceptance.md)。
+单独运行 `:core:domain:test :core:network:test :core:data:testDebugUnitTest :app:testDebugUnitTest` 时，不配置隔离后端的 4 项真实 HTTP 用例会跳过。Room 与 ViewModel 测试采用 Robolectric（API 34），不能代替设备检查。草稿复查见 [草稿报告](../docs/stage-reports/06b2a-persistent-drafts.md)，设备进度见 [验收清单](../docs/device-acceptance.md)。
 
 ### 设备自动检查
 
@@ -78,6 +82,14 @@ backend/.venv/Scripts/python.exe backend/scripts/check_device.py --serial emulat
 历史源码从已提交 Git 对象导出，唯一源码覆盖是专用包名；本机 SDK 配置不入库。两版使用同一本机调试签名，安装包与历史源码保存在忽略目录 `backend/.runtime/device-baseline/`，执行前核对 APK 哈希。旧版准备数据之前会重置专用包；旧版升级到新版的过程中只执行覆盖安装，不清库。扩展运行共 13 个设备/主机检查点、12 张截图，其中 12 项 JUnit 正常完成，1 项刻意终止前台测试进程并由主机验收。缺少历史包时脚本会提示先构建。
 
 本机 `CharacterAgent_API35` AVD 使用已有 API 35 镜像，数据在忽略目录中，不提交 Git。自动化输入和生命周期操作不代表完整输入法/实体手机验收；剩余范围以 [设备清单](../docs/device-acceptance.md) 为准。
+
+角色管理可单独验收，复用同样的隔离与清理机制，不需要先构建历史 APK：
+
+```powershell
+backend/.venv/Scripts/python.exe backend/scripts/check_device.py --serial emulator-5580 --characters
+```
+
+执行两组实际页面流程：创建、开聊和保存笔记；强制重开后编辑、取消删除、确认删除、继续旧对话。另由主机核对跨身份不可见与笔记真实保存，共四张截图。`--characters` 与 `--extended` 互斥。结果见 [角色管理报告](../docs/stage-reports/06c1-character-management.md)。
 
 ## 模块边界
 

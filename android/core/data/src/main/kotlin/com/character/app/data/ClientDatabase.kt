@@ -33,6 +33,10 @@ interface ClientDao {
     @Query("SELECT * FROM snapshots WHERE scope = :scope AND kind = :kind AND id = :id")
     suspend fun get(scope: String, kind: String, id: String): Snapshot?
     @Upsert suspend fun put(rows: List<Snapshot>)
+    @Query("DELETE FROM snapshots WHERE scope = :scope AND kind = :kind")
+    suspend fun clearKind(scope: String, kind: String)
+    @Query("DELETE FROM snapshots WHERE scope = :scope AND kind = :kind AND id = :id")
+    suspend fun deleteSnapshot(scope: String, kind: String, id: String)
     @Query("SELECT * FROM outbox WHERE scope = :scope AND conversationId = :conversationId")
     fun observePending(scope: String, conversationId: String): Flow<List<Outbox>>
     @Query("SELECT * FROM outbox WHERE scope = :scope AND conversationId = :conversationId")

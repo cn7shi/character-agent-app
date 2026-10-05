@@ -11,6 +11,7 @@ from .auth import current_user
 from .schemas import CharacterResponse, ConversationResponse, CreateConversationRequest, ErrorResponse, MessageResponse, Page
 from .schemas import CreateRunRequest, RunResponse
 from .schemas import NoteResponse, ToolCallList
+from .schemas import CharacterDefinitionResponse, SaveCharacterRequest, DeleteCharacterResponse
 
 router = APIRouter(prefix="/v1", responses={
     code: {"model": ErrorResponse} for code in (401, 403, 404, 422, 500)
@@ -27,7 +28,24 @@ def characters(request: Request, user: User, limit: Limit = 20, cursor: Cursor =
 
 @router.get("/characters/{character_id}", response_model=CharacterResponse, tags=["Characters"])
 def character(character_id: UUID, request: Request, user: User):
-    return request.app.state.catalog.character(str(character_id))
+    return request.app.state.catalog.character(user.id, str(character_id))
+
+
+@router.get("/characters/{character_id}/definition", response_model=CharacterDefinitionResponse, tags=["Characters"])
+def definition(character_id: UUID, request: Request, user: User):
+    return request.app.state.catalog.definition(user.id, str(character_id))
+
+
+@router.put("/characters/{character_id}", response_model=CharacterDefinitionResponse,
+            responses={409: {"model": ErrorResponse}}, tags=["Characters"])
+def save_character(character_id: UUID, payload: SaveCharacterRequest, request: Request, user: User):
+    return request.app.state.catalog.save_character(user.id, str(character_id), **payload.model_dump())
+
+
+@router.delete("/characters/{character_id}", response_model=DeleteCharacterResponse, tags=["Characters"])
+def delete_character(character_id: UUID, request: Request, user: User):
+    request.app.state.catalog.delete_character(user.id, str(character_id))
+    return {"deleted": True}
 
 
 @router.post(

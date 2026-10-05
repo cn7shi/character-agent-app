@@ -257,15 +257,21 @@ class ChatTests(unittest.TestCase):
         (migrations / first_migration.name).write_bytes(first_migration.read_bytes())
         db = Database(self.directory / "old.sqlite3")
         db.migrate(migrations)
-        from character_app.domain.entities import Principal
+        from character_app.domain.entities import Conversation
         from character_app.adapters.storage.sqlite import SqliteCatalogRepository
-        principal = Principal(self.users[0]["id"], "Upgrade test")
-        db.seed([principal])
+        # Historical fixtures use historical columns, not today's seed/repository implementation.
+        owner = self.users[0]["id"]
+        conversation_id = str(uuid4())
+        with db.transaction() as connection:
+            connection.execute("INSERT INTO users VALUES (?, 'Upgrade test', 'now')", (owner,))
+            connection.execute("INSERT INTO characters VALUES (?, 'old', '', NULL, NULL, 1, 'now', 'now')", (CHARACTER,))
+            connection.execute("INSERT INTO character_revisions VALUES (?, ?, 1, 'old persona', '[]')", (CHARACTER, CHARACTER))
+            connection.execute("INSERT INTO conversations VALUES (?, ?, ?, ?, 'old', 1, 'now', 'now')", (conversation_id, owner, CHARACTER, CHARACTER))
         catalog = SqliteCatalogRepository(db)
-        conversation = catalog.create_conversation(principal.id, CHARACTER, "old", str(uuid4()), "f").conversation
+        conversation = Conversation(conversation_id, CHARACTER, "old", 1, "now", "now")
         db.migrate(BACKEND_ROOT / "migrations")
-        self.assertEqual(catalog.conversation(principal.id, conversation.id), conversation)
-        self.assertEqual(catalog.messages(principal.id, conversation.id, None, 20), [])
+        self.assertEqual(catalog.conversation(owner, conversation.id), conversation)
+        self.assertEqual(catalog.messages(owner, conversation.id, None, 20), [])
 
 
 if __name__ == "__main__":

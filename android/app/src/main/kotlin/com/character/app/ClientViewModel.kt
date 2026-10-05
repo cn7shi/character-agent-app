@@ -15,6 +15,8 @@ data class ClientState(
     val dark: Boolean = true, val busy: Boolean = false, val error: String? = null, val polling: Boolean = false,
     val characters: List<Character> = emptyList(), val conversations: List<Conversation> = emptyList(),
     val notes: List<Note> = emptyList(), val selected: Conversation? = null,
+    val canManageCharacters: Boolean = false, val characterEditor: CharacterDraft? = null,
+    val pendingCharacter: CharacterDraft? = null,
     val messages: List<Message> = emptyList(), val pending: List<PendingMessage> = emptyList(),
     val runs: List<Run> = emptyList(), val draft: String = "", val draftState: DraftSaveState = DraftSaveState.LOADING
 )
@@ -71,7 +73,11 @@ class ClientViewModel internal constructor(
         adapter = backend
         val repo = OfflineRepository(database, connection.scope, backend)
         repository = repo
-        mutable.value = ClientState(connected = true, url = connection.baseUrl, tab = "角色", dark = vault.dark, polling = vault.mode == ConnectionMode.POLLING)
+        mutable.value = ClientState(connected = true, url = connection.baseUrl, tab = "角色", dark = vault.dark, polling = vault.mode == ConnectionMode.POLLING,
+            canManageCharacters = backend.supportsCharacterManagement)
+        session.launch { repo.pendingCharacter().collect { pending ->
+            if (repository === repo) mutable.update { it.copy(pendingCharacter = pending) }
+        } }
         session.launch {
             combine(repo.characters(), repo.conversations(), repo.notes()) { characters, conversations, notes -> Triple(characters, conversations, notes) }
                 .collect { (characters, conversations, notes) -> if (repository === repo) mutable.update { it.copy(characters = characters, conversations = conversations, notes = notes) } }
@@ -100,6 +106,35 @@ class ClientViewModel internal constructor(
         } catch (_: Exception) { mutable.update { it.copy(error = "无法切换连接方式，请重试。") } }
     }
     fun reconnectChat() { state.value.selected?.let(::open) }
+    fun newCharacter() = action {
+        val pending = pendingCharacter().first()
+        mutable.update { it.copy(characterEditor = pending ?: CharacterDraft(UUID.randomUUID().toString(), "", "", "", false, 0)) }
+    }
+    fun editCharacter(character: Character) = action {
+        val pending = pendingCharacter().first()
+        val definition = pending ?: characterDefinition(character.id)
+        mutable.update { it.copy(characterEditor = definition) }
+    }
+    fun changeCharacter(draft: CharacterDraft) {
+        if (!state.value.busy && state.value.pendingCharacter == null && state.value.characterEditor?.id == draft.id)
+            mutable.update { it.copy(characterEditor = draft) }
+    }
+    fun closeCharacterEditor() { if (!state.value.busy) mutable.update { it.copy(characterEditor = null, error = null) } }
+    fun saveCharacter() {
+        val draft = state.value.characterEditor ?: return
+        action {
+            saveCharacter(draft)
+            mutable.update { it.copy(characterEditor = null) }
+        }
+    }
+    fun reloadCharacter() {
+        val draft = state.value.characterEditor ?: return
+        action {
+            val saved = reloadCharacter(draft.id)
+            mutable.update { it.copy(characterEditor = saved, error = if (saved == null) "该角色已被删除，原聊天记录仍保留。" else null) }
+        }
+    }
+    fun deleteCharacter(character: Character) = action { deleteCharacter(character.id) }
     fun draft(text: String) {
         val conversation = state.value.selected ?: return
         val repo = repository ?: return

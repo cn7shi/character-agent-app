@@ -25,7 +25,9 @@ def main():
     parser.add_argument("--sdk", type=Path, default=os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
                         or Path(os.environ.get("LOCALAPPDATA", "")) / "Android" / "Sdk")
     parser.add_argument("--skip-build", action="store_true", help="Use already built deviceCheck APKs")
-    parser.add_argument("--extended", action="store_true", help="Also verify foreground kill, partial cancellation and a real schema-1 APK upgrade")
+    scenarios = parser.add_mutually_exclusive_group()
+    scenarios.add_argument("--extended", action="store_true", help="Also verify foreground kill, partial cancellation and a real schema-1 APK upgrade")
+    scenarios.add_argument("--characters", action="store_true", help="Run the character create/edit/delete and preserved-chat device scenario")
     args = parser.parse_args()
     adb_path = args.sdk / "platform-tools" / ("adb.exe" if os.name == "nt" else "adb")
     if not adb_path.is_file():
@@ -100,6 +102,7 @@ def main():
         "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
         "test_apk_sha256": hashlib.sha256(test_apk.read_bytes()).hexdigest(),
         "backend_provider": "mock", "network_fault": "stop isolated backend process, then restart same database",
+        "scenario": "characters" if args.characters else "extended" if args.extended else "base",
         "checkpoints": [], "passed": False,
     }
 
@@ -176,6 +179,24 @@ def main():
                 secrets.extend(user["token"] for user in users)
                 config = {"url": base + "/", "tokenA": secrets[0], "tokenB": secrets[1]}
                 write_private("device-check.json", json.dumps(config).encode())
+                if args.characters:
+                    report["network_fault"] = "not injected in this scenario"
+                    checkpoint("createCharacterAndChat", ["13-character-editor", "14-created-character"])
+                    _, visible = request(base, "/v1/characters", token=secrets[0])
+                    own = next(role for role in visible["items"] if role["editable"])
+                    _, other = request(base, "/v1/characters", token=secrets[1])
+                    if any(role["id"] == own["id"] for role in other["items"]):
+                        raise RuntimeError("Private role leaked to another identity")
+                    checkpoint("editDeleteCharacterAndContinue", ["15-edited-character", "16-deleted-role-existing-chat"])
+                    _, remaining = request(base, "/v1/characters", token=secrets[0])
+                    if any(role["id"] == own["id"] for role in remaining["items"]):
+                        raise RuntimeError("Deleted role still visible")
+                    _, notes = request(base, "/v1/notes", token=secrets[0])
+                    if {note["title"] for note in notes["items"]} != {"自建角色笔记", "删除角色后"} or len(notes["items"]) != 2:
+                        raise RuntimeError("Existing chat lost its pinned note capability")
+                    report["character_management"] = "created; reopened; edited; delete cancelled then confirmed; private; old chat and tool permission retained"
+                    report["passed"] = True
+                    return  # Context managers and the common finally still clean up and write results.
                 checkpoint("connectChatAndSaveDraft", ["01-draft"])
                 checkpoint("restoreAndSendWithNewDraft", ["02-next-draft"])
                 checkpoint("restoreNewDraftAndClear")

@@ -1,11 +1,12 @@
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
+import json
 from pathlib import Path
 import sqlite3
 from uuid import uuid4
 
-from character_app.domain.entities import Character, Conversation, CreateConversationResult, AppError, not_found
+from character_app.domain.entities import Character, CharacterDefinition, Conversation, CreateConversationResult, AppError, not_found
 from character_app.domain.ports import Position
 
 
@@ -83,21 +84,22 @@ class Database:
                 connection.execute("INSERT OR IGNORE INTO users VALUES (?, ?, ?)", (user.id, user.display_name, timestamp))
             for character_id, name, summary, prompt in characters:
                 connection.execute(
-                    "INSERT OR IGNORE INTO characters VALUES (?, ?, ?, NULL, NULL, 1, ?, ?)",
+                    "INSERT OR IGNORE INTO characters (id, name, summary, avatar_asset_id, background_asset_id, version, created_at, updated_at) VALUES (?, ?, ?, NULL, NULL, 1, ?, ?)",
                     (character_id, name, summary, timestamp, timestamp),
                 )
                 connection.execute(
-                    "INSERT OR IGNORE INTO character_revisions VALUES (?, ?, 1, ?, '[]')",
-                    (character_id, character_id, prompt),
+                    "INSERT OR IGNORE INTO character_revisions (id, character_id, version, system_prompt, allowed_tool_ids, name) VALUES (?, ?, 1, ?, '[]', ?)",
+                    (character_id, character_id, prompt, name),
                 )
             # D17: publish a new demo revision; existing conversations retain their original permissions.
-            connection.execute("INSERT OR IGNORE INTO character_revisions VALUES (?, ?, 2, ?, '[\"notes.save\"]')",
-                               ("11111111-1111-4111-8111-111111111112", characters[0][0], characters[0][3]))
+            connection.execute("INSERT OR IGNORE INTO character_revisions (id, character_id, version, system_prompt, allowed_tool_ids, name) VALUES (?, ?, 2, ?, '[\"notes.save\"]', ?)",
+                               ("11111111-1111-4111-8111-111111111112", characters[0][0], characters[0][3], characters[0][1]))
             connection.execute("UPDATE characters SET version = 2, updated_at = ? WHERE id = ? AND version = 1", (timestamp, characters[0][0]))
 
 
-def character_from(row) -> Character:
-    return Character(**{key: row[key] for key in Character.__dataclass_fields__})
+def character_from(row, user_id) -> Character:
+    return Character(**{key: row[key] for key in Character.__dataclass_fields__ if key != "editable"},
+                     editable=row["owner_id"] == user_id)
 
 
 def conversation_from(row) -> Conversation:
@@ -117,23 +119,71 @@ class SqliteCatalogRepository:
     def __init__(self, database: Database):
         self.database = database
 
-    def characters(self, after: Position | None, limit: int):
+    def characters(self, user_id: str, after: Position | None, limit: int):
         with self.database.connect() as connection:
             if after:
                 rows = connection.execute(
-                    "SELECT * FROM characters WHERE (created_at, id) > (?, ?) ORDER BY created_at, id LIMIT ?",
-                    (*after, limit),
+                    "SELECT * FROM characters WHERE deleted_at IS NULL AND (owner_id IS NULL OR owner_id = ?) AND (created_at, id) > (?, ?) ORDER BY created_at, id LIMIT ?",
+                    (user_id, *after, limit),
                 ).fetchall()
             else:
-                rows = connection.execute("SELECT * FROM characters ORDER BY created_at, id LIMIT ?", (limit,)).fetchall()
-        return [character_from(row) for row in rows]
+                rows = connection.execute("SELECT * FROM characters WHERE deleted_at IS NULL AND (owner_id IS NULL OR owner_id = ?) ORDER BY created_at, id LIMIT ?", (user_id, limit)).fetchall()
+        return [character_from(row, user_id) for row in rows]
 
-    def character(self, character_id: str):
+    def character(self, user_id: str, character_id: str):
         with self.database.connect() as connection:
-            row = connection.execute("SELECT * FROM characters WHERE id = ?", (character_id,)).fetchone()
+            row = connection.execute("SELECT * FROM characters WHERE id = ? AND deleted_at IS NULL AND (owner_id IS NULL OR owner_id = ?)", (character_id, user_id)).fetchone()
         if row is None:
             raise not_found()
-        return character_from(row)
+        return character_from(row, user_id)
+
+    @staticmethod
+    def _definition(connection, user_id, character_id):
+        row = connection.execute(
+            "SELECT c.*, r.system_prompt, r.allowed_tool_ids FROM characters c JOIN character_revisions r "
+            "ON r.character_id = c.id AND r.version = c.version WHERE c.id = ? AND c.owner_id = ? AND c.deleted_at IS NULL",
+            (character_id, user_id),
+        ).fetchone()
+        if row is None:
+            raise not_found()
+        return CharacterDefinition(row["id"], row["name"], row["summary"], row["system_prompt"],
+                                   "notes.save" in json.loads(row["allowed_tool_ids"]), row["version"])
+
+    def definition(self, user_id, character_id):
+        with self.database.connect() as connection:
+            return self._definition(connection, user_id, character_id)
+
+    def save_character(self, user_id, character_id, name, summary, system_prompt, notes_enabled, expected_version):
+        # D29: a fixed client ID plus the expected version identifies a write, including lost responses.
+        # Keep the comparison and immutable revision publication in one transaction.
+        desired = (name, summary, system_prompt, notes_enabled)
+        with self.database.transaction() as connection:
+            existing = connection.execute("SELECT * FROM characters WHERE id = ?", (character_id,)).fetchone()
+            timestamp = now()
+            if existing:
+                current = self._definition(connection, user_id, character_id)  # owner-only; deleted IDs never revive
+                if current.version == expected_version + 1 and desired == (current.name, current.summary, current.system_prompt, current.notes_enabled):
+                    return current
+                if current.version != expected_version:
+                    raise AppError(409, "CHARACTER_VERSION_CONFLICT", "角色已被修改，请重新读取后再编辑。")
+                connection.execute("UPDATE characters SET name = ?, summary = ?, version = version + 1, updated_at = ? WHERE id = ?",
+                                   (name, summary, timestamp, character_id))
+            else:
+                if expected_version != 0:
+                    raise not_found()
+                connection.execute("INSERT INTO characters (id, name, summary, version, created_at, updated_at, owner_id) VALUES (?, ?, ?, 1, ?, ?, ?)",
+                                   (character_id, name, summary, timestamp, timestamp, user_id))
+            connection.execute("INSERT INTO character_revisions (id, character_id, version, system_prompt, allowed_tool_ids, name) VALUES (?, ?, ?, ?, ?, ?)",
+                               (str(uuid4()), character_id, expected_version + 1, system_prompt, json.dumps(["notes.save"] if notes_enabled else []), name))
+            return self._definition(connection, user_id, character_id)
+
+    def delete_character(self, user_id, character_id):
+        # Hide from future discovery/creation, but retain pinned personas and all previous chats.
+        with self.database.transaction() as connection:
+            row = connection.execute("SELECT id FROM characters WHERE id = ? AND owner_id = ?", (character_id, user_id)).fetchone()
+            if row is None:
+                raise not_found()
+            connection.execute("UPDATE characters SET deleted_at = COALESCE(deleted_at, ?) WHERE id = ?", (now(), character_id))
 
     def create_conversation(self, user_id, character_id, title, key, fingerprint):
         # D03: lock before the receipt lookup so concurrent retries cannot both create.
@@ -149,7 +199,7 @@ class SqliteCatalogRepository:
                 if row is None:
                     raise not_found()
                 return CreateConversationResult(conversation_from(row), False)
-            character = connection.execute("SELECT * FROM characters WHERE id = ?", (character_id,)).fetchone()
+            character = connection.execute("SELECT * FROM characters WHERE id = ? AND deleted_at IS NULL AND (owner_id IS NULL OR owner_id = ?)", (character_id, user_id)).fetchone()
             if character is None:
                 raise not_found()
             revision = connection.execute(

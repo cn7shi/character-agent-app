@@ -41,6 +41,25 @@ class RealBackendTest {
             }
         }
     }
+    @Test fun characterManagementWorksThroughBothRealHttpModes() = runBlocking {
+        for (mode in ConnectionMode.entries) BackendFactory.connect(connection(), mode).use { api ->
+            assertTrue(api.supportsCharacterManagement)
+            val draft = CharacterDraft(UUID.randomUUID().toString(), "原生自建角色", "简介", "你善于倾听。", true, 0)
+            val created = api.saveCharacter(draft)
+            assertEquals(1, created.version)
+            assertEquals(created, api.saveCharacter(draft))
+            assertEquals(created, api.characterDefinition(draft.id))
+            val updated = api.saveCharacter(created.copy(name = "原生修改后", notesEnabled = false))
+            assertEquals(2, updated.version)
+            val conversation = api.createConversation(draft.id, UUID.randomUUID().toString())
+            api.deleteCharacter(draft.id)
+            api.deleteCharacter(draft.id)
+            assertFalse(api.characters(null).items.any { it.id == draft.id })
+            assertTrue(api.messages(conversation.id, null).items.isEmpty())
+            try { api.characterDefinition(draft.id); fail() }
+            catch (error: BackendFailure) { assertEquals(FailureKind.NOT_FOUND, error.kind) }
+        }
+    }
     @Test fun realEventStreamResumesAfterDisconnectAndObservesExplicitCancellation() = runBlocking {
         BackendFactory.connect(connection(), ConnectionMode.REALTIME).use { api ->
             val conversation = api.createConversation(api.characters(null).items.first().id, UUID.randomUUID().toString())

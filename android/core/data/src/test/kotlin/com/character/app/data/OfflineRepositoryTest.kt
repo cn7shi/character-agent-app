@@ -78,6 +78,70 @@ class OfflineRepositoryTest {
     @After fun close() { database.close(); context.deleteDatabase(name) }
     private fun reopen() { database.close(); database = Room.databaseBuilder(context, ClientDatabase::class.java, name).build() }
 
+    @Test fun characterWriteSurvivesLostResponseAndDatabaseReopen() = runBlocking {
+        var accepted: CharacterDraft? = null
+        var lose = true
+        val calls = mutableListOf<CharacterDraft>()
+        val remote = object : BackendAdapter by backend {
+            override suspend fun saveCharacter(draft: CharacterDraft): CharacterDraft {
+                calls += draft
+                if (accepted == null) accepted = draft.copy(version = 1)
+                if (lose) { lose = false; throw RemoteFailure() }
+                return checkNotNull(accepted)
+            }
+        }
+        val draft = CharacterDraft(UUID.randomUUID().toString(), "角色", "简介", "人设", true, 0)
+        try { OfflineRepository(database, "a", remote).saveCharacter(draft); fail() } catch (_: BackendFailure) { }
+        reopen()
+        val repo = OfflineRepository(database, "a", remote)
+        assertEquals(draft, repo.pendingCharacter().first())
+        assertNull(OfflineRepository(database, "b", remote).pendingCharacter().first())
+        try { repo.saveCharacter(draft.copy(name = "不能替换待确认内容")); fail() } catch (_: IllegalStateException) { }
+        repo.saveCharacter(checkNotNull(repo.pendingCharacter().first()))
+        assertEquals(listOf(draft, draft), calls)
+        assertNull(repo.pendingCharacter().first())
+        assertEquals(draft.id, repo.characters().first().single().id)
+        assertTrue(repo.characters().first().single().editable)
+    }
+
+    @Test fun completeCharacterRefreshRemovesDeletedRowsButFailedPageKeepsCache() = runBlocking {
+        var stage = 0
+        val remote = object : BackendAdapter by backend {
+            override suspend fun characters(cursor: String?): Page<Character> = when (stage) {
+                0 -> Page(listOf(backend.character), null)
+                1 -> if (cursor == null) Page(emptyList(), "next") else throw RemoteFailure()
+                else -> Page(emptyList(), null)
+            }
+        }
+        val repo = OfflineRepository(database, "a", remote)
+        repo.refreshHome()
+        stage = 1
+        try { repo.refreshHome(); fail() } catch (_: BackendFailure) { }
+        assertEquals(listOf(backend.character), repo.characters().first())
+        stage = 2
+        repo.refreshHome()
+        assertTrue(repo.characters().first().isEmpty())
+        assertEquals(backend.conversation, repo.conversations().first().single())
+    }
+
+    @Test fun conflictingCharacterWriteRequiresExplicitReload() = runBlocking {
+        // Includes an unconfirmed creation whose version 1 was already edited elsewhere.
+        for (version in listOf(0, 1)) {
+        val draft = CharacterDraft("role", "旧版", "", "人设", false, version)
+        val latest = draft.copy(name = "另一设备的新版本", version = 3)
+        val remote = object : BackendAdapter by backend {
+            override suspend fun saveCharacter(draft: CharacterDraft): CharacterDraft = throw RemoteFailure(409)
+            override suspend fun characterDefinition(id: String) = latest
+        }
+        val repo = OfflineRepository(database, "a", remote)
+        try { repo.saveCharacter(draft); fail() } catch (_: BackendFailure) { }
+        assertEquals(draft, repo.pendingCharacter().first())
+        assertEquals(latest, repo.reloadCharacter(draft.id))
+        assertNull(repo.pendingCharacter().first())
+        assertEquals(latest.name, repo.characters().first().single().name)
+        }
+    }
+
     @Test fun draftsSurviveReopenAndStayScoped() = runBlocking {
         val first = MessageDraft("first", "  第一行\n第二行 🌙  ")
         val second = MessageDraft("second", "另一会话")

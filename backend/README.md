@@ -1,6 +1,6 @@
 # 角色应用服务端
 
-阶段 5 已实现：持久化聊天、可配置的 OpenAI 兼容文本适配、凭证保护，以及使用固定规则的最小 Agent 和真实保存的笔记工具。默认模拟聊天不需要 AI 密钥。外部供应商尚未选定，真实模型工具适配、MCP 和正式账号认证尚未完成。
+已实现持久化聊天、兼容文本适配、凭证保护、最小 Agent 和真实保存的笔记工具。阶段 6C1 新增私有角色创建、编辑与删除、版本冲突检查及旧会话保留。默认模拟聊天不需要 AI 密钥。外部供应商尚未选定，真实模型工具适配、MCP 和正式账号认证尚未完成。
 
 ## 启动
 
@@ -36,6 +36,9 @@ uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
 | `GET /health` | 健康检查 |
 | `GET /v1/characters` | 角色分页列表 |
 | `GET /v1/characters/{character_id}` | 角色公开资料，不返回私有人设 |
+| `GET /v1/characters/{character_id}/definition` | 仅所有者可读的当前人设与笔记能力 |
+| `PUT /v1/characters/{character_id}` | 创建或编辑自己的角色，expected_version 检查并发与重复保存 |
+| `DELETE /v1/characters/{character_id}` | 幂等移除自己的角色，保留旧会话与笔记 |
 | `POST /v1/conversations` | 创建独立会话，支持请求去重 |
 | `GET /v1/conversations` | 当前用户的会话分页列表 |
 | `GET /v1/conversations/{conversation_id}/messages` | 当前会话消息，按序号倒序分页 |
@@ -55,7 +58,7 @@ uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
 
 默认 `mock-v2` 提供两条固定回复。在林舟的新会话发送“记笔记：周末安排；买咖啡；看电影”，会按固定规则整理并真正保存笔记；已有会话仍使用原人设权限。最多 3 次工具轮次加 1 次回复轮次，只有真实保存结果才能触发成功回复。取消不撤销已提交的笔记，重试同一次调用不重复保存。使用方法见 [无 AI 联调演示](../docs/offline-demo.md)。
 
-完整规则见 [接口约定](../contracts/api-v1.md)。[生成的 OpenAPI](../contracts/openapi-v1.json) 描述当前已实现的 13 项操作。
+完整规则见 [接口约定](../contracts/api-v1.md)。[生成的 OpenAPI](../contracts/openapi-v1.json) 描述当前已实现的 16 项操作。
 
 ## 验证
 
@@ -66,7 +69,7 @@ uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
 .\.venv\Scripts\python.exe scripts\demo_chat.py
 ```
 
-第一条运行 57 项测试，覆盖聊天、供应商协议、凭证保护，以及工具权限、去重、回滚、取消、步数限制和笔记隔离。第二条强制使用模拟配置启动本机服务，验证断流重连、取消、中断恢复、笔记持久化与重试；结束后清理测试进程与数据。第三条导出 OpenAPI。第四条在独立临时数据库运行两条固定回复和一次笔记保存，输出对话与笔记。导出与演示不读取本机模型配置，全部自动测试都不调用外部付费模型。
+第一条运行 64 项测试，覆盖聊天、供应商协议、凭证保护、工具权限与笔记，以及私有角色隔离、版本重试与冲突、旧库迁移、删除保留聊天和人设原子提交。第二条强制使用模拟配置启动本机服务，验证断流重连、取消、中断恢复、笔记持久化与重试；结束后清理测试进程与数据。第三条导出 OpenAPI。第四条在独立临时数据库运行两条固定回复和一次笔记保存，输出对话与笔记。导出与演示不读取本机模型配置，全部自动测试都不调用外部付费模型。
 
 Windows 的异步运行时需要本机回环连接；在限制回环的沙箱中执行测试会阻塞，应在允许本机网络的开发终端运行。当前测试依赖的 TestClient 对 httpx 兼容接口有弃用提示，不影响已通过的测试；后续统一升级测试客户端时处理。
 

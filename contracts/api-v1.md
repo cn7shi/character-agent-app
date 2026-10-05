@@ -1,6 +1,6 @@
 # 业务 API 与流式事件草案
 
-状态：包括健康检查在内的 13 项操作已经实现并通过验证；阶段 5 新增工具记录、笔记查询与工具事件。已实现响应以 [生成的 OpenAPI](openapi-v1.json) 为准。接口独立于具体界面、Room 表结构和模型供应商；存储约束见 [数据模型](../docs/data-model.md)。
+状态：包括健康检查在内的 16 项操作已经实现并通过验证；阶段 6C1 新增私有角色创建、编辑、删除与人设读取。已实现响应以 [生成的 OpenAPI](openapi-v1.json) 为准。接口独立于具体界面、Room 表结构和模型供应商；存储约束见 [数据模型](../docs/data-model.md)。
 
 ## 通用约定
 
@@ -20,6 +20,9 @@
 | `GET /health` | 存活检查，不包含内部配置 | 200，`{"status":"ok"}` | 2 |
 | `GET /v1/characters` | 当前用户可见的角色列表 | 200，分页角色资料 | 2 |
 | `GET /v1/characters/{character_id}` | 获取可见角色详情 | 200，角色资料 | 2 |
+| `GET /v1/characters/{character_id}/definition` | 所有者读取完整人设 | 200，角色定义 | 6C1 |
+| `PUT /v1/characters/{character_id}` | 创建或编辑自己的角色 | 200，保存后的角色定义 | 6C1 |
+| `DELETE /v1/characters/{character_id}` | 移除自己的角色，保留旧会话 | 200，`{"deleted":true}` | 6C1 |
 | `POST /v1/conversations` | 为角色创建独立会话 | 首次 201，重试 200，会话对象 | 2 |
 | `GET /v1/conversations` | 当前用户的会话列表 | 200，分页会话对象 | 2 |
 | `GET /v1/conversations/{conversation_id}/messages` | 已保存的历史消息 | 200，分页消息对象 | 3，已支持真实保存的消息 |
@@ -33,7 +36,27 @@
 
 角色列表按固定 `(created_at, id)` 升序分页，会话列表按 `(updated_at, id)` 降序分页，消息按 `sequence` 降序分页。游标由服务端产生并校验；会话列表在更新期间允许出现重复项，客户端按 ID 合并，首版不承诺跨请求快照一致性。
 
-角色公开响应包含 `id`、`name`、`summary`、`avatar_asset_id`、`background_asset_id`、`version`，可空资源字段返回 `null`，不返回私有提示词与工具凭证。资源下载接口后续加入，首版资源字段可为空。
+角色展示响应包含 `id`、`name`、`summary`、`avatar_asset_id`、`background_asset_id`、`version`、`editable`，可空资源字段返回 `null`，不返回私有人设与工具凭证。列表只包含内置角色和当前用户自己的未删除角色。资源下载接口后续加入，首版资源字段可为空。
+
+## 私有角色管理
+
+PUT 路径 ID 由客户端生成 UUID，创建时 expected_version 为 0，编辑时为最近读取到的版本。不需要 Idempotency-Key；重试必须使用同一个路径、相同基准版本和相同内容。请求示例：
+
+```json
+{
+  "name": "晚风",
+  "summary": "陪你整理今天的小事",
+  "system_prompt": "你是晚风，温和且简洁。",
+  "notes_enabled": true,
+  "expected_version": 0
+}
+```
+
+文本去除首尾空白后检查名称 1–100、简介 0–500、人设 1–8000 个 Unicode 字符；简介允许空串，其余不能为空。notes_enabled 必须为布尔值，expected_version 必须是非负整数。额外字段拒绝，包括 owner_id 和任意 allowed_tool_ids；所有者来自认证身份，笔记开关只映射服务端注册的 notes.save。
+
+定义响应含 id、name、summary、system_prompt、notes_enabled、version。读取定义和保存/删除仅允许所有者；内置角色或其他人的角色返回统一 404。角色资料和不可变人设版本同事务保存；首次创建版本为 1，每次新编辑加 1。若当前版本恰为 expected_version+1 且内容相同，视为原保存重试返回当前定义，不重复发布；已被后续修改、同基准不同内容等冲突返回 `409 CHARACTER_VERSION_CONFLICT`，客户端须重新读取后决定，不自动覆盖。
+
+DELETE 标记移除，重复删除自己的同一 ID 仍返回 200；角色从列表和新建会话中消失，已删除 ID 不能 PUT 复活。旧会话继续引用原版本的名称、人设和能力，历史消息、草稿和笔记保留。原已成功创建会话的请求键重放仍返回原会话。此删除不代表彻底清除服务器历史数据；公开角色、恢复、文件上传和永久删除尚未实现。
 
 ## 创建会话
 

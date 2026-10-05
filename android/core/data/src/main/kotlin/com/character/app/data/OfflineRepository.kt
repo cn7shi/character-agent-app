@@ -30,6 +30,45 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
     private val dao = db.dao()
     private val gate = Mutex()
     private fun <T> watch(kind: String, read: (JSONObject) -> T) = dao.observe(scope, kind).map { rows -> rows.map { read(JSONObject(it.payload)) } }
+    override fun pendingCharacter() = watch("character_write", JsonCodec::characterDraft).map { it.singleOrNull() }
+    override suspend fun characterDefinition(id: String) = remote.characterDefinition(id)
+    override suspend fun saveCharacter(draft: CharacterDraft) = gate.withLock {
+        val normalized = draft.copy(name = draft.name.trim(), summary = draft.summary.trim(), systemPrompt = draft.systemPrompt.trim())
+        fun String.count() = codePointCount(0, length)
+        require(normalized.name.count() in 1..100 && normalized.summary.count() <= 500 && normalized.systemPrompt.count() in 1..8000)
+        val pending = dao.get(scope, "character_write", "pending")?.let { JsonCodec.characterDraft(JSONObject(it.payload)) }
+        check(pending == null || pending == normalized)
+        // D29: persist the exact ID, version and content before HTTP. Unknown results are retried
+        // unchanged even after restart; changing the form requires an explicit server reload.
+        dao.put(listOf(Snapshot(scope, "character_write", "pending", JsonCodec.encode(normalized).toString(), "")))
+        val saved = remote.saveCharacter(normalized)
+        if (saved.id != draft.id || saved.version != draft.version + 1) throw BackendFailure(FailureKind.PROTOCOL)
+        db.withTransaction {
+            dao.put(listOf(row(Character(saved.id, saved.name, saved.summary, saved.version, true))))
+            dao.clearKind(scope, "character_write")
+        }
+    }
+    override suspend fun reloadCharacter(id: String): CharacterDraft? = gate.withLock {
+        val pending = dao.get(scope, "character_write", "pending")?.let { JsonCodec.characterDraft(JSONObject(it.payload)) }
+        val current = try { remote.characterDefinition(id) } catch (error: BackendFailure) {
+            if (error.kind != FailureKind.NOT_FOUND) throw error
+            // An absent unconfirmed creation may still be in flight. Keep its identity/content;
+            // a successful GET can reconcile even if another device already edited version 1.
+            if (pending?.id == id && pending.version == 0) throw error
+            null
+        }
+        db.withTransaction {
+            if (pending?.id == id) dao.clearKind(scope, "character_write")
+            if (current == null) dao.deleteSnapshot(scope, "characters", id)
+            else dao.put(listOf(row(Character(current.id, current.name, current.summary, current.version, true))))
+        }
+        current
+    }
+    override suspend fun deleteCharacter(id: String) = gate.withLock {
+        check(dao.list(scope, "character_write").isEmpty())
+        remote.deleteCharacter(id)
+        dao.deleteSnapshot(scope, "characters", id)
+    }
     override fun characters() = watch("characters", JsonCodec::character)
     override fun conversations() = watch("conversations", JsonCodec::conversation)
     override fun messages(conversationId: String) = watch("messages:$conversationId", JsonCodec::message).map { it.sortedBy(Message::sequence) }
@@ -62,8 +101,15 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
         return result
     }
     override suspend fun refreshHome() = gate.withLock {
-        dao.put(allPages(remote::characters).map(::row))
-        dao.put(allPages(remote::conversations).map(::row))
+        val characters = allPages(remote::characters).map(::row)
+        val conversations = allPages(remote::conversations).map(::row)
+        // A complete successful list is authoritative, so deleted roles also disappear from cache.
+        // Never clear before all pages succeed; offline refresh must preserve the previous snapshot.
+        db.withTransaction {
+            dao.clearKind(scope, "characters")
+            dao.put(characters)
+            dao.put(conversations)
+        }
     }
     override suspend fun refreshNotes() = gate.withLock { refreshNotesLocked() }
     private suspend fun refreshNotesLocked() { dao.put(allPages(remote::notes).map(::row)) }

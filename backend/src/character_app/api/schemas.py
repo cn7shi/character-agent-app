@@ -12,6 +12,35 @@ class CharacterResponse(BaseModel):
     avatar_asset_id: UUID | None
     background_asset_id: UUID | None
     version: int
+    editable: bool
+
+
+class CharacterDefinitionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    name: str
+    summary: str
+    system_prompt: str
+    notes_enabled: bool
+    version: int
+
+
+class SaveCharacterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=100)
+    summary: str = Field(max_length=500)
+    system_prompt: str = Field(min_length=1, max_length=8000)
+    notes_enabled: bool = Field(strict=True)
+    expected_version: int = Field(ge=0, strict=True)
+
+    @field_validator("name", "summary", "system_prompt", mode="before")
+    @classmethod
+    def normalize_text(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
+class DeleteCharacterResponse(BaseModel):
+    deleted: Literal[True] = True
 
 
 class ConversationResponse(BaseModel):

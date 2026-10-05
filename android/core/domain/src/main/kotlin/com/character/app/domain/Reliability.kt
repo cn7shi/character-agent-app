@@ -54,6 +54,10 @@ class RetryPolicy(
 
 /** Only these declared idempotent business operations receive retries; transport POSTs do not. */
 class ReliableBackend(private val delegate: BackendAdapter, private val policy: RetryPolicy = RetryPolicy()) : BackendAdapter {
+    override val supportsCharacterManagement get() = delegate.supportsCharacterManagement
+    override suspend fun characterDefinition(id: String) = policy.execute { delegate.characterDefinition(id) }
+    override suspend fun saveCharacter(draft: CharacterDraft) = policy.execute(preserveAmbiguousWrite = true) { delegate.saveCharacter(draft) }
+    override suspend fun deleteCharacter(id: String) = policy.execute { delegate.deleteCharacter(id) }
     override val supportsEvents get() = delegate.supportsEvents
     override fun events(runId: String, afterSequence: Long) = delegate.events(runId, afterSequence)
     override fun close() = delegate.close()

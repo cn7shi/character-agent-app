@@ -52,7 +52,7 @@ class CatalogService:
 
     def characters(self, user_id: str, cursor: str | None, limit: int):
         scope = f"characters:{user_id}"
-        rows = self.repository.characters(self.cursors.decode(cursor, scope), limit + 1)
+        rows = self.repository.characters(user_id, self.cursors.decode(cursor, scope), limit + 1)
         items = rows[:limit]
         next_cursor = None
         if len(rows) > limit:
@@ -60,8 +60,17 @@ class CatalogService:
             next_cursor = self.cursors.encode(scope, (last.created_at, last.id))
         return {"items": items, "next_cursor": next_cursor}
 
-    def character(self, character_id: str):
-        return self.repository.character(character_id)
+    def character(self, user_id: str, character_id: str):
+        return self.repository.character(user_id, character_id)
+
+    def definition(self, user_id: str, character_id: str):
+        return self.repository.definition(user_id, character_id)
+
+    def save_character(self, user_id: str, character_id: str, **fields):
+        return self.repository.save_character(user_id, character_id, **fields)
+
+    def delete_character(self, user_id: str, character_id: str):
+        return self.repository.delete_character(user_id, character_id)
 
     def create_conversation(self, user_id: str, character_id: str, title: str | None, key: str):
         # Hash the normalized request, not a mutable default character name.
