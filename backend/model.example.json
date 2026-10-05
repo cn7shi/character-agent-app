@@ -1,0 +1,9 @@
+{
+  "provider": "mock",
+  "base_url": "",
+  "model_name": "",
+  "api_key": "",
+  "timeout_seconds": 30,
+  "max_tokens": 1024,
+  "token_limit_parameter": "max_tokens"
+}

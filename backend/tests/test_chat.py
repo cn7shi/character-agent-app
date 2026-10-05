@@ -236,6 +236,20 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(len(events), completed.last_event_sequence)
         self.assertEqual(events[-1]["type"], "run.completed")
 
+    def test_context_budget_preserves_complete_turns(self):
+        self.stack.close()
+        user_id = self.users[0]["id"]
+        for _ in range(12):
+            run = self.repo.create_run(user_id, self.conversation, str(uuid4()), "u" * 8000, str(uuid4()), "f", "test", True).run
+            self.repo.start(user_id, run.id)
+            self.repo.update_text(user_id, run.id, "a" * 16000)
+            self.repo.finish(user_id, run.id, "completed")
+        pending = self.repo.create_run(user_id, self.conversation, str(uuid4()), "current", str(uuid4()), "f", "test", True).run
+        messages = self.repo.context(user_id, pending.id).messages
+        self.assertLessEqual(sum(len(m.text) for m in messages), 48000)
+        self.assertEqual([m.role for m in messages], ["user", "assistant", "user"])
+        self.assertEqual(messages[-1].text, "current")
+
     def test_existing_catalog_database_upgrades_without_data_loss(self):
         migrations = self.directory / "old-migrations"
         migrations.mkdir()

@@ -1,6 +1,6 @@
 # 角色应用服务端
 
-阶段 3 已实现：FastAPI 开发服务、独立 SQLite 存储、两个开发用户、示例角色、独立会话，以及可保存、取消和恢复订阅的模拟聊天。真实模型、Agent、MCP 和正式账号认证尚未实现。
+阶段 4A 已实现：原有持久化聊天基础上加入可配置的 OpenAI 兼容文本适配、本机凭证隔离、日志脱敏与 Git 检查。默认仍使用模拟聊天。外部供应商尚未选定，真实模型联调、Agent、MCP 和正式账号认证尚未完成。
 
 ## 启动
 
@@ -27,6 +27,8 @@ uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
 
 默认数据位置为 `.runtime/app/character.sqlite3`，不使用原型数据库。需要单独数据目录时设置 `CHARACTER_DATA_DIR`，开发模式会同时把游标密钥与开发凭证保存到该目录。运行数据与凭证均不应提交到版本库。
 
+真实模型配置见 [模型配置与凭证保护](../docs/model-configuration.md)。复制空白 `model.example.json` 到被忽略的 `model.local.json` 后，在本机填写；环境变量可覆盖配置。新克隆还需在项目根目录执行 `git config --local core.hooksPath .githooks` 启用提交和推送检查。
+
 ## 当前接口
 
 | 操作 | 行为 |
@@ -44,9 +46,9 @@ uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
 
 创建会话需要 UUID 格式的 `Idempotency-Key`，请求体包含 `character_id` 和可选 `title`。省略或传入 `null` 时使用角色名称；文本先去除首尾空白，再检查 1 至 100 个字符。首次返回 201，相同请求重试返回 200，同键不同内容返回 409。
 
-聊天请求包含 `client_message_id` 与 `text`，也需要 `Idempotency-Key`；重试时两个标识和内容都保持不变。返回 `run_id` 后可查询状态或订阅事件，关闭订阅不会取消生成。所有回复均标记为模拟，不需要真实模型密钥。
+聊天请求包含 `client_message_id` 与 `text`，也需要 `Idempotency-Key`；重试时两个标识和内容都保持不变。返回 `run_id` 后可查询状态或订阅事件，关闭订阅不会取消生成。任务字段 `is_simulated` 区分模拟与供应商适配，默认模拟模式不需要密钥。
 
-当前一个数据目录只允许一个开发服务进程。后台最多同时运行 8 个任务，每个会话只能有一个活动任务。模型读取时限为 30 秒，回复上限 16000 字符；重启将未完成任务标记失败，不自动重放。启动脚本保持单进程，不要增加 `--workers`。
+当前一个数据目录只允许一个开发服务进程。后台最多同时运行 8 个任务，每个会话只能有一个活动任务。默认生成时限为 30 秒，可在模型配置中调整；回复上限 16000 字符。重启将未完成任务标记失败，不自动重放。启动脚本保持单进程，不要增加 `--workers`。
 
 完整规则见 [接口约定](../contracts/api-v1.md)。[生成的 OpenAPI](../contracts/openapi-v1.json) 描述当前已实现的 10 项操作。
 
@@ -58,7 +60,7 @@ uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
 .\.venv\Scripts\python.exe scripts\export_openapi.py
 ```
 
-第一条运行 27 项行为测试，包含用户隔离、分页、并发重试、事务回滚、迁移升级、事件回放、取消与错误处理。第二条启动真实回环服务，验证正在生成时断流与重连、取消、进程中断恢复、持久化与重试；结束后关闭子进程并清理临时数据。第三条从路由导出 OpenAPI，不启动数据库生命周期。
+第一条运行 46 项测试，覆盖原有行为、供应商协议与真实本机 HTTP 适配、取消释放连接、日志脱敏、配置校验和 Git 敏感信息拦截。第二条强制使用模拟配置启动本机服务，验证断流重连、取消、中断恢复、持久化与重试；结束后清理测试进程与数据。第三条导出 OpenAPI，不读取本机模型配置。全部自动测试都不调用外部付费模型。
 
 Windows 的异步运行时需要本机回环连接；在限制回环的沙箱中执行测试会阻塞，应在允许本机网络的开发终端运行。当前测试依赖的 TestClient 对 httpx 兼容接口有弃用提示，不影响已通过的测试；后续统一升级测试客户端时处理。
 
@@ -70,10 +72,10 @@ Windows 的异步运行时需要本机回环连接；在限制回环的沙箱中
 | `src/character_app/domain` | 实体、错误和仓库接口 |
 | `src/character_app/application` | 业务操作、分页游标、任务调度与事件订阅 |
 | `src/character_app/adapters/storage` | SQLite 仓库、短连接、事务和迁移 |
-| `src/character_app/adapters/models` | 已实现模拟模型，真实模型适配待接入 |
+| `src/character_app/adapters/models` | 模拟与 OpenAI 兼容文本适配、客户端生命周期及日志保护 |
 | `src/character_app/adapters/tools` | 内置工具预留 |
 | `src/character_app/adapters/mcp` | 远程 MCP 接入预留 |
 | `migrations` | 带校验记录的数据库迁移 |
 | `tests` | 用独立临时数据库验证业务行为 |
 
-`main.py` 组装依赖并统一错误格式。接口不直接操作 SQL，领域模块不依赖 FastAPI。关键选择的原因见 [设计决策](../docs/decisions.md)，本阶段结果见 [阶段报告](../docs/stage-reports/03-persisted-chat.md)。
+`main.py` 组装依赖并统一错误格式。接口不直接操作 SQL，领域模块不依赖 FastAPI。关键选择的原因见 [设计决策](../docs/decisions.md)，本阶段结果见 [阶段报告](../docs/stage-reports/04a-model-adapter-and-secrets.md)。

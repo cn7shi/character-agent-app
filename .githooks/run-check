@@ -1,0 +1,12 @@
+#!/bin/sh
+cd "$(git rev-parse --show-toplevel)" || exit 1
+if [ -x backend/.venv/Scripts/python.exe ]; then
+    exec backend/.venv/Scripts/python.exe scripts/check_secrets.py "$@"
+elif [ -x backend/.venv/bin/python ]; then
+    exec backend/.venv/bin/python scripts/check_secrets.py "$@"
+elif command -v python3 >/dev/null 2>&1; then
+    exec python3 scripts/check_secrets.py "$@"
+else
+    echo "Secret check requires Python; operation blocked." >&2
+    exit 1
+fi

@@ -1,6 +1,6 @@
 # 业务 API 与流式事件草案
 
-状态：阶段 2 与 3 的 10 项操作已经实现并通过验证，工具相关事件仍为草案。已实现响应以 [生成的 OpenAPI](openapi-v1.json) 为准。接口独立于具体界面、Room 表结构和模型供应商；存储约束见 [数据模型](../docs/data-model.md)。
+状态：10 项业务操作已经实现并通过验证；阶段 4A 新增兼容模型适配与模型错误分类，不增加业务接口。工具相关事件仍为草案。已实现响应以 [生成的 OpenAPI](openapi-v1.json) 为准。接口独立于具体界面、Room 表结构和模型供应商；存储约束见 [数据模型](../docs/data-model.md)。
 
 ## 通用约定
 
@@ -65,11 +65,28 @@
 
 `completed`、`failed`、`cancelled` 是不可更改的终态。取消与完成并发时，以先提交的终态为准；进入终态后再次取消返回当前状态。`cancel_requested` 表示已记录停止意图，还不能向用户显示已停止。
 
-执行对象包含 `id`、`conversation_id`、`executor`、`model_name`、`is_simulated`、`status`、`last_event_sequence`、`input_message`、`output_message`、`error`、`created_at`、`updated_at`。非失败状态 `error` 为 `null`，失败时至少包含 `code` 和可展示的 `message`。阶段 3 使用 `mock-v1`，`is_simulated` 为 `true`，文本也明确标记模拟回复。
+执行对象包含 `id`、`conversation_id`、`executor`、`model_name`、`is_simulated`、`status`、`last_event_sequence`、`input_message`、`output_message`、`error`、`created_at`、`updated_at`。非失败状态 `error` 为 `null`，失败时至少包含 `code` 和可展示的 `message`。默认使用 `mock-v1`，`is_simulated` 为 `true`，文本也明确标记模拟回复。选择兼容适配后保存配置中的模型名称，并设置 `is_simulated: false`；这个字段表达使用的适配类型，不表示对应供应商已通过认证或验证。
 
 模型生成超时使用 `MODEL_TIMEOUT`，模型异常或超过输出限制使用 `MODEL_ERROR`，开发服务重启中断使用 `RUN_INTERRUPTED`。已保存的部分回复保留并标记失败或取消；助手消息仅在生成正常结束时标记 `completed`。
 
-当前模型读取时限为 30 秒，输出上限为 16000 字符；每个服务最多同时执行 8 个任务，同会话仅一个活动任务，其余会话可以排队。开发版无跨进程队列，数据目录通过进程锁限制一个执行服务。待实现正式认证、配额与部署限流后再开放对外访问。
+默认模型生成时限为 30 秒，可配置为 1 至 120 秒；输出上限为 16000 字符。每个服务最多同时执行 8 个任务，同会话仅一个活动任务，其余会话可以排队。开发版无跨进程队列，数据目录通过进程锁限制一个执行服务。待实现正式认证、配额与部署限流后再开放对外访问。
+
+兼容模型错误为任务终态中的 `error`，不会把流已开始后的错误改成另一份 HTTP 错误体：
+
+| code | 含义 |
+| --- | --- |
+| `MODEL_AUTH_FAILED` | 供应商鉴权失败 |
+| `MODEL_RATE_LIMITED` | 供应商限流 |
+| `MODEL_UNAVAILABLE` | 网络或供应商不可用 |
+| `MODEL_REQUEST_REJECTED` | 请求配置不被接受，含重定向被拒绝 |
+| `MODEL_STREAM_INTERRUPTED` | 未收到完整结束标记即断流 |
+| `MODEL_PROTOCOL_ERROR` | 非预期协议或过大的事件 |
+| `MODEL_OUTPUT_TRUNCATED` | 供应商返回长度截断，已有内容保留 |
+| `MODEL_CONTENT_FILTERED` | 内容被过滤或拒绝 |
+| `MODEL_TOOLS_UNSUPPORTED` | 当前纯文本适配收到工具调用 |
+| `MODEL_EMPTY_RESPONSE` | 没有可显示的文本 |
+
+公开错误不包含供应商响应正文、URL、认证头或密钥。当前兼容适配支持范围见 [模型配置](../docs/model-configuration.md)。
 
 ## 流式事件
 
@@ -123,4 +140,4 @@ data: <单行 JSON 事件信封>
 - 事件重连不重复拼接文本，不重复调用模型或工具。
 - 取消、失败和断流不能显示成成功；重启不自动重放写操作。
 
-阶段 3 累计通过 27 项行为测试，验证消息与任务原子保存、并发重试去重、访问隔离、分页、取消、超时、迁移升级、事件多批回放、单执行器锁及中断恢复。真实 HTTP/SSE 检查已验证断流重连、取消和进程重启；真实模型与 Android Room 同步尚待后续阶段验证。
+阶段 4A 累计通过 46 项测试。原有持久化、隔离、并发和恢复检查继续通过；新增协议解析、配置、脱敏、Git 检查以及本机供应商 HTTP 联调。选定外部模型和 Android Room 同步尚待后续验证。

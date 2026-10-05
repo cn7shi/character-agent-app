@@ -4,7 +4,7 @@
 
 ## 当前进度
 
-已完成阶段 3：后端支持角色、独立会话、消息保存、模拟流式回复、取消和断流恢复。27 项行为测试及真实 HTTP/SSE、进程重启检查通过。当前回复明确标记为模拟；真实模型、Android 可运行工程、Agent 和 MCP 尚未实现。
+已完成阶段 3 与阶段 4A：后端支持角色、会话、持久化聊天、取消、断流恢复及可配置的 OpenAI 兼容文本接口，并加入凭证隔离、日志脱敏和 Git 提交/推送检查。46 项测试及本机 HTTP/SSE 检查通过。默认使用模拟回复；外部供应商待选定，真实模型联调、Android 可运行工程、Agent 和 MCP 尚未完成。
 
 代码仓库：私有仓库 [cn7shi/character-agent-app](https://github.com/cn7shi/character-agent-app)。按阶段提交源码、接口和设计记录，运行数据与凭证留在本机。
 
@@ -16,7 +16,8 @@
 - [数据模型](docs/data-model.md)：本地与服务端保存什么，如何隔离与对齐。
 - [接口草案](contracts/api-v1.md)：角色、会话、任务和流式事件。
 - [后端运行说明](backend/README.md)：启动、身份、当前接口与检查命令。
-- [阶段报告](docs/stage-reports/03-persisted-chat.md)：本次交付、核验和未实现范围。
+- [模型配置与凭证保护](docs/model-configuration.md)：本机配置、兼容范围、Git 检查与日志处理。
+- [阶段报告](docs/stage-reports/04a-model-adapter-and-secrets.md)：本次交付、核验和未实现范围。
 - [设计决策记录](docs/decisions.md)：为什么这样写、取舍与未来调整条件。
 - [已实现接口](contracts/openapi-v1.json)：从当前代码生成的 OpenAPI。
 - [推进计划](docs/roadmap.md)：每一步的范围与验收条件。
@@ -55,4 +56,4 @@ Company/
 
 每次任务明确由哪一端执行；首版在线任务在后端。客户端读取业务状态并呈现，同一数据可用于不同布局和主题。
 
-原型参考目录为 `E:\MYcode\IOSH5DEMO`，仅作设计与实现参考，不作为新项目的运行依赖。下一阶段接入一个真实模型供应商，继续保留模拟模式用于独立验证。
+原型参考目录为 `E:\MYcode\IOSH5DEMO`，仅作设计与实现参考，不作为新项目的运行依赖。确定供应商并在本机填入配置后，再验证真实模型流式回复，继续保留模拟模式用于独立验证。

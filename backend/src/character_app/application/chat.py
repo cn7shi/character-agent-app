@@ -6,6 +6,7 @@ import logging
 import time
 
 from character_app.domain.chat import ChatRepository, TextModel, TERMINAL
+from character_app.domain.model_errors import ModelFailure, MESSAGES
 
 logger = logging.getLogger(__name__)
 INTERRUPTED = {"code": "RUN_INTERRUPTED", "message": "服务已停止，任务未完成。"}
@@ -108,9 +109,9 @@ class ChatService:
             status = "failed" if self.closing else "cancelled" if stop.is_set() else "completed"
             await asyncio.to_thread(self.repository.finish, user_id, run_id, status, INTERRUPTED if self.closing else None)
         except Exception as exc:
-            code = "MODEL_TIMEOUT" if isinstance(exc, TimeoutError) else "MODEL_ERROR"
+            code = exc.code if isinstance(exc, ModelFailure) else "MODEL_TIMEOUT" if isinstance(exc, TimeoutError) else "MODEL_ERROR"
             # Provider exceptions may contain credentials/prompts; store only a safe public error.
-            error = {"code": code, "message": "回复超时。" if code == "MODEL_TIMEOUT" else "回复生成失败。"}
+            error = {"code": code, "message": MESSAGES.get(code, "回复生成失败。")}
             try:
                 await asyncio.to_thread(self.repository.finish, user_id, run_id, "failed", error)
             except Exception:

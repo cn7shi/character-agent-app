@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Character App API",
-    "description": "Local development catalog, persisted chat runs and resumable SSE. Replies use an explicitly labelled mock model.",
-    "version": "0.3.0"
+    "description": "Local development catalog, persisted chat and resumable SSE. Mock by default; optional OpenAI-compatible text provider. Credentials remain server-side.",
+    "version": "0.4.0"
   },
   "paths": {
     "/health": {

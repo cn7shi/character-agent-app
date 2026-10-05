@@ -35,3 +35,16 @@ character.sqlite3*
 development-users.json
 cursor.key
 service.lock
+
+# Model credentials, private configuration and diagnostic output
+model.local.json
+model.local.*.json
+secrets/
+credentials/
+*.log
+*.log.*
+logs/
+*.pem
+*.p12
+*.pfx
+*.key

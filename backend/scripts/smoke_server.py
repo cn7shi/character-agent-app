@@ -52,7 +52,12 @@ def events(base, run_id, token, after=0, stop_after_update=False):
 
 @contextmanager
 def server(directory, port):
-    env = {**os.environ, "CHARACTER_DATA_DIR": str(directory), "CHARACTER_DEV_AUTH": "1"}
+    # Keep smoke tests offline even after the workstation is configured for a paid provider.
+    config = directory / "model.local.json"
+    config.write_text('{"provider": "mock"}', encoding="utf-8")
+    env = {**{k: v for k, v in os.environ.items() if not k.startswith("CHARACTER_MODEL_")},
+           "CHARACTER_DATA_DIR": str(directory), "CHARACTER_DEV_AUTH": "1",
+           "CHARACTER_MODEL_CONFIG_FILE": str(config), "CHARACTER_MODEL_PROVIDER": "mock"}
     base = f"http://127.0.0.1:{port}"
     with (directory / "server.log").open("a", encoding="utf-8") as log:
         process = subprocess.Popen(
