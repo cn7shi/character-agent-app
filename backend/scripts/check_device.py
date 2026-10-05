@@ -25,10 +25,19 @@ def main():
     parser.add_argument("--sdk", type=Path, default=os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
                         or Path(os.environ.get("LOCALAPPDATA", "")) / "Android" / "Sdk")
     parser.add_argument("--skip-build", action="store_true", help="Use already built deviceCheck APKs")
+    parser.add_argument("--extended", action="store_true", help="Also verify foreground kill, partial cancellation and a real schema-1 APK upgrade")
     args = parser.parse_args()
     adb_path = args.sdk / "platform-tools" / ("adb.exe" if os.name == "nt" else "adb")
     if not adb_path.is_file():
         parser.error("Android SDK platform-tools not found; pass --sdk")
+    legacy_apk = runtime / "device-baseline/app-schema1.apk"
+    legacy_metadata = None
+    if args.extended:
+        if not legacy_apk.is_file() or not (legacy_apk.parent / "baseline.json").is_file():
+            parser.error("Build the historical APK with build_device_baseline.py before --extended")
+        legacy_metadata = json.loads((legacy_apk.parent / "baseline.json").read_text(encoding="utf-8"))
+        if legacy_metadata["schema"] != 1 or hashlib.sha256(legacy_apk.read_bytes()).hexdigest() != legacy_metadata["sha256"]:
+            raise RuntimeError("Historical APK does not match its build record; rerun build_device_baseline.py")
     secrets = []
 
     def safe(value):
@@ -109,6 +118,49 @@ def main():
             for name in screenshot:
                 (evidence / (name + ".png")).write_bytes(adb("exec-out", "run-as", PACKAGE, "cat", f"files/{name}.png").stdout)
 
+    def kill_foreground():
+        adb("shell", "am", "force-stop", PACKAGE)
+        adb("shell", "run-as", PACKAGE, "rm", "-f", "files/kill-ready.json", "files/kill-clean-exit")
+        command = [str(adb_path), "-s", args.serial, "shell", "am", "instrument", "-w", "-r", "-e", "class", TEST + "#holdForegroundForKill", RUNNER]
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        started = time.monotonic()
+        passed = False
+        try:
+            while True:
+                ready = adb("exec-out", "run-as", PACKAGE, "cat", "files/kill-ready.json", check=False, timeout=5)
+                if ready.stdout.startswith(b"{"):
+                    pid = str(json.loads(ready.stdout)["pid"])
+                    break
+                if process.poll() is not None or time.monotonic() - started > 35:
+                    raise RuntimeError("Foreground checkpoint did not reach the kill barrier")
+                time.sleep(0.1)
+            if adb("shell", "pidof", PACKAGE).stdout.decode().strip() != pid:
+                raise RuntimeError("Foreground process identity changed before kill")
+            activities = adb("shell", "dumpsys", "activity", "activities").stdout.decode(errors="replace")
+            if not any("ResumedActivity" in line and PACKAGE + "/" in line for line in activities.splitlines()):
+                raise RuntimeError("Target app was not the resumed foreground activity")
+            (evidence / "07-before-kill.png").write_bytes(adb("exec-out", "run-as", PACKAGE, "cat", "files/07-before-kill.png").stdout)
+            adb("shell", "am", "force-stop", PACKAGE)
+            output, _ = process.communicate(timeout=10)
+            (evidence / "foreground-kill.txt").write_text(safe(output.decode(errors="replace")), encoding="utf-8")
+            remaining = adb("exec-out", "run-as", PACKAGE, "ls", "files").stdout.splitlines()
+            if adb("shell", "pidof", PACKAGE, check=False).stdout.strip() or b"kill-clean-exit" in remaining or b"OK (1 test)" in output:
+                raise RuntimeError("Expected abrupt process termination was not observed")
+            passed = True
+        finally:
+            if process.poll() is None:
+                adb("shell", "am", "force-stop", PACKAGE, check=False)
+                process.communicate(timeout=10)
+            report["checkpoints"].append({"name": "foregroundKillBarrier", "passed": passed, "seconds": round(time.monotonic() - started, 2)})
+        print("foregroundKillBarrier: PASS", flush=True)
+
+    def verify_replay(base, token, pending, text):
+        status, replay = request(base, f"/v1/conversations/{pending['conversationId']}/runs", token=token,
+                                 payload={"client_message_id": pending["id"], "text": text}, key=pending["requestKey"])
+        if status != 200 or replay["input_message"]["client_message_id"] != pending["id"] or replay["status"] != "completed":
+            raise RuntimeError("Original request identity or completed status was not preserved")
+        return replay
+
     reverse = None
     try:
         with tempfile.TemporaryDirectory(prefix="device-server-", dir=runtime) as temporary:
@@ -119,7 +171,7 @@ def main():
             mapping = f"tcp:{port}"
             adb("reverse", "--no-rebind", mapping, mapping)
             reverse = mapping  # Only remove a mapping this invocation actually created.
-            with server(directory, port) as base:
+            with server(directory, port, device_fixture=args.extended) as base:
                 users = json.loads((directory / "development-users.json").read_text(encoding="utf-8"))
                 secrets.extend(user["token"] for user in users)
                 config = {"url": base + "/", "tokenA": secrets[0], "tokenB": secrets[1]}
@@ -137,12 +189,9 @@ def main():
                 raise RuntimeError("Isolated backend is still listening; offline evidence would be invalid")
             checkpoint("offlineCacheAndQueue", ["05-offline-queue"])
             pending = json.loads(adb("exec-out", "run-as", PACKAGE, "cat", "files/offline-request.json").stdout)
-            with server(directory, port) as base:
+            with server(directory, port, device_fixture=args.extended) as base:
                 checkpoint("recoverOriginalRequest", ["06-recovered"])
-                status, replay = request(base, f"/v1/conversations/{pending['conversationId']}/runs", token=secrets[0],
-                                         payload={"client_message_id": pending["id"], "text": "断网期间的原请求"}, key=pending["requestKey"])
-                if status != 200 or replay["input_message"]["client_message_id"] != pending["id"] or replay["status"] != "completed":
-                    raise RuntimeError("Original request identity or completed status was not preserved")
+                verify_replay(base, secrets[0], pending, "断网期间的原请求")
                 _, messages = request(base, f"/v1/conversations/{pending['conversationId']}/messages", token=secrets[0])
                 if sum(message["client_message_id"] == pending["id"] for message in messages["items"]) != 1:
                     raise RuntimeError("Recovered input message is missing or duplicated")
@@ -151,7 +200,63 @@ def main():
                     raise RuntimeError("Saved note was lost or duplicated")
                 report["original_request_replay"] = "same id/key, HTTP 200, one input message"
                 report["persisted_notes"] = 1
-                report["passed"] = True
+                if args.extended:
+                    previous_ids = {message["id"] for message in messages["items"]}
+                    kill_foreground()
+                    checkpoint("recoverForegroundKill", ["08-after-kill"])
+                    _, after = request(base, f"/v1/conversations/{pending['conversationId']}/messages", token=secrets[0])
+                    if {message["id"] for message in after["items"]} != previous_ids:
+                        raise RuntimeError("Restart unexpectedly sent a message")
+                    (directory / "hold-stream").touch()
+                    checkpoint("cancelPartialNoteThenContinue", ["09-cancel-and-continue"])
+                    if not (directory / "hold-started").is_file():
+                        raise RuntimeError("Mock never reached the partial-stream barrier")
+                    _, history = request(base, f"/v1/conversations/{pending['conversationId']}/messages", token=secrets[0])
+                    cancelled_input = next(message for message in history["items"] if any("设备暂停" in block["text"] for block in message["blocks"]))
+                    _, cancelled = request(base, f"/v1/runs/{cancelled_input['run_id']}", token=secrets[0])
+                    if cancelled["status"] != "cancelled" or not cancelled["output_message"]["blocks"]:
+                        raise RuntimeError("Did not cancel a partially generated reply")
+                    _, notes = request(base, "/v1/notes", token=secrets[0])
+                    if len(notes["items"]) != 2 or sum(note["title"] == "设备暂停" for note in notes["items"]) != 1:
+                        raise RuntimeError("Cancellation lost or duplicated a committed note")
+                    # The same mock text occurs earlier in this chat. Confirm a NEW run finished,
+                    # so a stale bubble cannot make the next-reply device assertion pass by itself.
+                    following = next(message for message in history["items"] if message["id"] not in previous_ids
+                                     and message["role"] == "user" and any(block["text"] == "今天有点累" for block in message["blocks"]))
+                    _, next_run = request(base, f"/v1/runs/{following['run_id']}", token=secrets[0])
+                    if next_run["status"] != "completed" or not next_run["output_message"]["blocks"]:
+                        raise RuntimeError("The reply after cancellation did not complete")
+                    report["foreground_kill"] = "resumed activity; live PID killed before @After; draft restored without sending"
+                    report["partial_cancellation"] = "partial output cancelled; committed note retained once; next reply completed"
+                    report["notes_after_cancellation"] = len(notes["items"])
+            if args.extended:
+                # Reset only before installing schema 1. The schema-1 -> schema-2 transition below
+                # is an ordinary install -r: no clear, uninstall, SQL injection or DB replacement.
+                adb("shell", "am", "force-stop", PACKAGE)
+                if b"Success" not in adb("shell", "pm", "clear", PACKAGE).stdout:
+                    raise RuntimeError("Cannot reset the owned device-test package")
+                if b"Success" not in adb("install", "--no-streaming", "-r", str(legacy_apk)).stdout:
+                    raise RuntimeError("Historical APK installation failed")
+                adb("shell", "run-as", PACKAGE, "mkdir", "-p", "files")
+                write_private("device-check-owner", b"character-device-check-v1")
+                legacy_directory = directory / "legacy"
+                legacy_directory.mkdir()
+                with server(legacy_directory, port) as base:
+                    users = json.loads((legacy_directory / "development-users.json").read_text(encoding="utf-8"))
+                    legacy_token = users[0]["token"]
+                    secrets.extend(user["token"] for user in users)
+                    write_private("device-check.json", json.dumps({"url": base + "/", "tokenA": legacy_token}).encode())
+                    checkpoint("prepareLegacyOnline")
+                checkpoint("prepareLegacyOffline", ["10-legacy-outbox"])
+                before = json.loads(adb("exec-out", "run-as", PACKAGE, "cat", "files/legacy-state.json").stdout)
+                if b"Success" not in adb("install", "--no-streaming", "-r", str(apk)).stdout:
+                    raise RuntimeError("Upgrade installation failed")
+                checkpoint("verifyLegacyMigration", ["11-upgraded-outbox"])
+                with server(legacy_directory, port) as base:
+                    checkpoint("retryLegacyRequestAfterUpgrade", ["12-upgraded-recovered"])
+                    verify_replay(base, legacy_token, before["outbox"][0], "旧版待发送消息")
+                report["apk_upgrade"] = {"baseline": legacy_metadata, "tables_preserved": list(before), "schema": "1 -> 2", "original_request_replay": "HTTP 200", "new_draft_persisted": True}
+            report["passed"] = True
     except Exception as error:
         report["error"] = safe(str(error))
         raise RuntimeError(report["error"]) from None
@@ -160,7 +265,7 @@ def main():
         cleanup_errors = []
         commands = [
             ("shell", "am", "force-stop", PACKAGE),
-            ("shell", "run-as", PACKAGE, "rm", "-f", "files/device-check.json", "files/offline-request.json"),
+            ("shell", "run-as", PACKAGE, "rm", "-f", "files/device-check.json", "files/offline-request.json", "files/kill-ready.json", "files/kill-clean-exit", "files/legacy-state.json", "files/legacy-cipher"),
         ]
         if reverse:
             commands.append(("reverse", "--remove", reverse))
@@ -171,7 +276,7 @@ def main():
                 cleanup_errors.append(safe(str(error)))
         try:
             remaining = adb("exec-out", "run-as", PACKAGE, "ls", "files", timeout=15).stdout.splitlines()
-            if b"device-check.json" in remaining or b"offline-request.json" in remaining:
+            if set(remaining) & {b"device-check.json", b"offline-request.json", b"kill-ready.json", b"kill-clean-exit", b"legacy-state.json", b"legacy-cipher"}:
                 cleanup_errors.append("Private bootstrap cleanup did not complete")
         except Exception as error:
             cleanup_errors.append(safe(str(error)))

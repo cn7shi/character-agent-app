@@ -4,7 +4,7 @@
 
 ## 当前进度
 
-阶段 6B2B 已建立可重复的设备调试流程，并完成六组 Android 15 模拟器检查：连接和加密凭证、聊天与笔记、草稿恢复/清空/发送交接、主题与身份隔离、停服后的缓存和原请求重试。设备截图发现的深色状态栏图标问题已修复。已有 61 项 Android 本机测试与 57 项后端测试，继续用 OpenCodeReview 委托复查。后端保持固定回复，不配置真实 AI 也可联调。完整设备验收、原型视觉、真实模型联调和 MCP 仍有后续工作。
+阶段 6B2C 已完成 Android 15 模拟器的 13 个设备/主机检查点。在首轮连接、聊天、笔记、草稿、主题、身份和停服恢复检查上，补齐前台运行中强杀、部分回复取消后继续聊天，以及历史 schema 1 APK 覆盖升级到 schema 2：消息、待发送请求和加密连接保留，新草稿可恢复。已有 61 项 Android 本机测试与 57 项后端测试，继续用 OpenCodeReview 委托复查。后端保持固定回复，不配置真实 AI 也可联调。完整设备验收、原型视觉、真实模型联调和 MCP 仍有后续工作。
 
 代码仓库：私有仓库 [cn7shi/character-agent-app](https://github.com/cn7shi/character-agent-app)。按阶段提交源码、接口和设计记录，运行数据与凭证留在本机。
 
@@ -20,7 +20,7 @@
 - [模型配置与凭证保护](docs/model-configuration.md)：本机配置、兼容范围、Git 检查与日志处理。
 - [无需 AI 的演示](docs/offline-demo.md)：两条固定回复、笔记示例与运行方法。
 - [网络可靠性](docs/network-reliability.md)：适配器边界、重试、恢复及能力范围。
-- [最新阶段报告](docs/stage-reports/06b2b-device-debugging.md)：设备实跑、截图、修复与未覆盖范围。
+- [最新阶段报告](docs/stage-reports/06b2c-recovery-and-upgrade.md)：前台强杀、部分回复取消、历史 APK 覆盖升级与未覆盖范围。
 - [设备验收清单](docs/device-acceptance.md)：已验收和仍须验证的具体场景。
 - [OCR 委托审查](docs/stage-reports/06b1-ocr-review.md)：覆盖范围、4 项问题、修复与回归证据。
 - [设计决策记录](docs/decisions.md)：为什么这样写、取舍与未来调整条件。

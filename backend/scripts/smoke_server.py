@@ -52,17 +52,21 @@ def events(base, run_id, token, after=0, stop_after_update=False):
 
 
 @contextmanager
-def server(directory, port):
+def server(directory, port, *, device_fixture=False):
     # Keep smoke tests offline even after the workstation is configured for a paid provider.
     config = directory / "model.local.json"
     config.write_text('{"provider": "mock"}', encoding="utf-8")
     env = {**{k: v for k, v in os.environ.items() if not k.startswith("CHARACTER_MODEL_")},
            "CHARACTER_DATA_DIR": str(directory), "CHARACTER_DEV_AUTH": "1",
            "CHARACTER_MODEL_CONFIG_FILE": str(config), "CHARACTER_MODEL_PROVIDER": "mock"}
+    factory = "character_app.main:create_app"
+    if device_fixture:
+        factory = "device_fixture:create_device_app"
+        env["PYTHONPATH"] = os.pathsep.join([str(backend / "scripts"), str(backend / "src")])
     base = f"http://127.0.0.1:{port}"
     with (directory / "server.log").open("a", encoding="utf-8") as log:
         process = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "character_app.main:create_app", "--factory", "--app-dir", str(backend / "src"), "--host", "127.0.0.1", "--port", str(port), "--no-proxy-headers"],
+            [sys.executable, "-m", "uvicorn", factory, "--factory", "--app-dir", str(backend / "src"), "--host", "127.0.0.1", "--port", str(port), "--no-proxy-headers"],
             cwd=backend, env=env, stdout=log, stderr=log,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )

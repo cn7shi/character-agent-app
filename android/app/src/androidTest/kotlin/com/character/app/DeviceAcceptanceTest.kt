@@ -5,6 +5,7 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.database.sqlite.SQLiteDatabase
 import android.graphics.Bitmap
+import android.os.Process
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -16,6 +17,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import org.json.JSONObject
+import org.json.JSONArray
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -34,6 +36,7 @@ class DeviceAcceptanceTest {
     private val draft = "  中文 草稿 ☕🙂\n第二行：保留换行和空格  "
     private val nextDraft = "下一条独立草稿 🌙\n还没有发送"
     private val offlineText = "断网期间的原请求"
+    private var waitingForKill = false
 
     @Before fun launch() {
         check(context.packageName == "com.character.app.devicecheck")
@@ -41,7 +44,10 @@ class DeviceAcceptanceTest {
         activity = ActivityScenario.launch(MainActivity::class.java)
     }
 
-    @After fun close() { if (::activity.isInitialized) activity.close() }
+    @After fun close() {
+        if (waitingForKill) File(context.filesDir, "kill-clean-exit").writeText("test returned normally")
+        if (::activity.isInitialized) activity.close()
+    }
 
     private fun waitFor(matcher: SemanticsMatcher, timeout: Long = 30_000) {
         ui.waitUntil(timeout) { ui.onAllNodes(matcher).fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty() }
@@ -222,5 +228,114 @@ class DeviceAcceptanceTest {
         waitFor(hasText("发送") and isEnabled())
         assertDraft(nextDraft)
         screenshot("06-recovered")
+    }
+
+    @Test fun holdForegroundForKill() {
+        openChat()
+        saveDraft("运行中强杀：已保存的草稿 🌙\n不会自动发送")
+        assertEquals(Lifecycle.State.RESUMED, activity.state)
+        screenshot("07-before-kill")
+        waitingForKill = true
+        // The host must kill a live test with a resumed Activity, before @After/VM disposal.
+        File(context.filesDir, "kill-ready.json").writeText(JSONObject().put("pid", Process.myPid()).toString())
+        Thread.sleep(60_000)
+        fail("Host did not terminate the foreground process")
+    }
+
+    @Test fun recoverForegroundKill() {
+        assertFalse(File(context.filesDir, "kill-clean-exit").exists())
+        openChat()
+        assertDraft("运行中强杀：已保存的草稿 🌙\n不会自动发送")
+        screenshot("08-after-kill")
+        saveDraft("")
+    }
+
+    @Test fun cancelPartialNoteThenContinue() {
+        openChat()
+        send("记笔记：设备暂停；取消后保留笔记")
+        waitFor(hasText("停止") and isEnabled())
+        // The fixture pauses only after a text chunk, following the committed note tool.
+        waitFor(hasText("【模拟"))
+        click("停止")
+        waitFor(hasText("已停止"))
+        saveDraft("今天有点累")
+        waitFor(hasText("发送") and isEnabled())
+        click("发送")
+        saveDraft("取消之后的新草稿")
+        waitFor(hasText("发送") and isEnabled())
+        waitFor(hasText("【模拟回复】那就先慢下来吧。你可以说说今天发生的事，我会陪你聊一会儿。"))
+        screenshot("09-cancel-and-continue")
+        click("‹ 返回")
+        click("笔记")
+        waitFor(hasText("设备暂停"))
+    }
+
+    private fun rawState(): JSONObject = SQLiteDatabase.openDatabase(
+        context.getDatabasePath("character-client.db").path, null, SQLiteDatabase.OPEN_READONLY
+    ).use { db ->
+        val state = JSONObject()
+        for ((table, order) in listOf("snapshots" to "scope, kind, id", "outbox" to "scope, id", "conversation_requests" to "scope, characterId")) {
+            val items = JSONArray()
+            db.rawQuery("SELECT * FROM $table ORDER BY $order", null).use { rows ->
+                while (rows.moveToNext()) {
+                    val row = JSONObject()
+                    for (column in 0 until rows.columnCount) row.put(rows.getColumnName(column),
+                        if (rows.isNull(column)) JSONObject.NULL else rows.getString(column))
+                    items.put(row)
+                }
+            }
+            state.put(table, items)
+        }
+        state
+    }
+
+    private fun assertSchema(version: Int) {
+        SQLiteDatabase.openDatabase(context.getDatabasePath("character-client.db").path, null, SQLiteDatabase.OPEN_READONLY)
+            .use { assertEquals(version, it.version) }
+    }
+
+    @Test fun prepareLegacyOnline() {
+        connect(config.getString("tokenA"), existing = false)
+        newChat()
+        editor().performTextReplacement("你好")
+        click("发送")
+        waitFor(hasText("【模拟回复】你好，我在。今天想聊些什么？"))
+        waitFor(hasText("已完成"))
+        assertSchema(1)
+    }
+
+    @Test fun prepareLegacyOffline() {
+        openChat()
+        editor().performTextReplacement("旧版待发送消息")
+        click("发送")
+        waitFor(hasText("用原请求重试") and isEnabled(), 45_000)
+        assertSchema(1)
+        val before = rawState()
+        assertEquals(1, before.getJSONArray("outbox").length())
+        File(context.filesDir, "legacy-state.json").writeText(before.toString())
+        File(context.filesDir, "legacy-cipher").writeText(context.getSharedPreferences("connection", Context.MODE_PRIVATE).getString("payload", null)!!)
+        screenshot("10-legacy-outbox")
+    }
+
+    @Test fun verifyLegacyMigration() {
+        // The static heading appears before Room opens; cached content proves migration finished.
+        waitFor(hasText("开发角色 · 林舟"))
+        assertSchema(2)
+        assertEquals(JSONObject(File(context.filesDir, "legacy-state.json").readText()).toString(), rawState().toString())
+        assertEquals(File(context.filesDir, "legacy-cipher").readText(), context.getSharedPreferences("connection", Context.MODE_PRIVATE).getString("payload", null))
+        openChat()
+        assertDraft("")
+        saveDraft("升级后的新草稿 ☕")
+        screenshot("11-upgraded-outbox")
+    }
+
+    @Test fun retryLegacyRequestAfterUpgrade() {
+        openChat()
+        assertDraft("升级后的新草稿 ☕")
+        click("用原请求重试")
+        waitFor(hasText("发送") and isEnabled())
+        assertDraft("升级后的新草稿 ☕")
+        waitFor(hasText("旧版待发送消息"))
+        screenshot("12-upgraded-recovered")
     }
 }

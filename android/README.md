@@ -2,7 +2,7 @@
 
 已建立 Kotlin/Compose 多模块工程、Room 缓存与待发送记录、HTTP/SSE 后端适配，以及角色、会话、聊天、笔记和连接设置页面。默认连接现有模拟后端，不需要真实 AI；首次加载与发送仍需要本机后端运行。
 
-这是一份开发版客户端。当前没有正式登录、后台自动发送或原型级视觉还原。网络恢复、本地草稿与数据库升级已完成本机测试，并已完成六组 Android 15 设备自动检查；完整设备验收仍有未覆盖项。实际验证见 [阶段报告](../docs/stage-reports/06b2b-device-debugging.md)，策略详见 [网络可靠性](../docs/network-reliability.md)。
+这是一份开发版客户端。当前没有正式登录、后台自动发送或原型级视觉还原。网络恢复、本地草稿与数据库升级已完成本机测试，并已完成 13 个 Android 15 设备/主机检查点，含前台强杀、部分回复取消和历史 APK 覆盖升级；完整设备验收仍有未覆盖项。实际验证见 [阶段报告](../docs/stage-reports/06b2c-recovery-and-upgrade.md)，策略详见 [网络可靠性](../docs/network-reliability.md)。
 
 ## 构建
 
@@ -64,11 +64,20 @@ backend/.venv/Scripts/python.exe backend/scripts/check_device.py --serial emulat
 
 脚本自动编译 `deviceCheck` 和对应测试包，通过 `-PdeviceChecks=true` 启用设备测试构建。普通 debug 构建及原有单元测试入口保持可用。需要 JDK 21、SDK 36、可用的 adb 设备和后端虚拟环境；SDK 不在默认位置时传入 `--sdk <SDK目录>`。`--skip-build` 仅用于已经重新编译过的测试包，不会自动确认源码是否改变。
 
-专用包名为 `com.character.app.devicecheck`，每轮重置它自己的测试数据；遇到没有脚本标记的同名包会停止。正常开发包 `com.character.app` 不受影响。检查点按顺序共享临时数据，必须由此脚本运行，不能将这六个测试随机排序单独批量运行。
+专用包名为 `com.character.app.devicecheck`，每轮重置它自己的测试数据；遇到没有脚本标记的同名包会停止。正常开发包 `com.character.app` 不受影响。检查点按顺序共享临时数据，必须由此脚本运行，不能随机排序单独批量运行；其中前台强杀检查需要主机同步配合。
 
 每轮使用独立模拟后端，自动验证连接和聊天、草稿恢复/清空/发送交接、笔记、主题、实时与兼容模式、开发身份隔离，以及停服后的缓存和原请求重试。凭证只经标准输入写入应用私有临时配置，结束后清除；设备日志先脱敏，截图不取凭证页。原始结果保存在被忽略的 `backend/.runtime/device-evidence-<UTC时间>/`，包含 `results.json`、逐项输出和六张截图。服务与转发会清理；专用应用保留安装以便下一轮复用。
 
-本次另建立了本机 `CharacterAgent_API35` AVD，使用已有 API 35 镜像，数据在忽略目录中，不提交 Git。自动化输入和生命周期操作不代表完整输入法/实体手机验收；仍须完成清单中的运行中强杀、回复中断流与取消、旧 APK 覆盖升级等检查。
+扩展检查另验证前台运行中强杀、部分回复取消后继续聊天，以及真实 schema 1 APK 覆盖升级。先构建一次固定历史版本，再执行：
+
+```powershell
+backend/.venv/Scripts/python.exe backend/scripts/build_device_baseline.py
+backend/.venv/Scripts/python.exe backend/scripts/check_device.py --serial emulator-5580 --extended
+```
+
+历史源码从已提交 Git 对象导出，唯一源码覆盖是专用包名；本机 SDK 配置不入库。两版使用同一本机调试签名，安装包与历史源码保存在忽略目录 `backend/.runtime/device-baseline/`，执行前核对 APK 哈希。旧版准备数据之前会重置专用包；旧版升级到新版的过程中只执行覆盖安装，不清库。扩展运行共 13 个设备/主机检查点、12 张截图，其中 12 项 JUnit 正常完成，1 项刻意终止前台测试进程并由主机验收。缺少历史包时脚本会提示先构建。
+
+本机 `CharacterAgent_API35` AVD 使用已有 API 35 镜像，数据在忽略目录中，不提交 Git。自动化输入和生命周期操作不代表完整输入法/实体手机验收；剩余范围以 [设备清单](../docs/device-acceptance.md) 为准。
 
 ## 模块边界
 
