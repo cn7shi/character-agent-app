@@ -1,6 +1,6 @@
 # 两端存储与最小数据模型
 
-状态：已通过迁移建立 `users`、`characters`、`character_revisions`、`conversations`、`request_receipts`、`messages`、`runs`、`run_events`，阶段 5 新增 `tool_calls` 与 `notes`。Room、长期记忆与资源管理尚未实现；本文中尚未落地的对象仍为设计约定。
+状态：服务端已建立 `users`、`characters`、`character_revisions`、`conversations`、`request_receipts`、`messages`、`runs`、`run_events`、`tool_calls` 与 `notes`。Android 阶段 6A 新增 Room 快照、待发送与会话创建请求表。长期记忆、资源管理与完整同步尚未实现。
 
 ## 数据归属
 
@@ -88,13 +88,15 @@
 
 ## 客户端数据对象
 
-Room 计划保存 `cached_characters`、`cached_conversations`、`cached_messages`、`cached_runs`、`cached_notes`、`outbox` 与 `drafts`。每条私有记录带账号范围；切换账号时不能显示上一账号的数据或继续发送上一账号的请求。
+Room 阶段 6A 实际保存 `snapshots`、`outbox` 与 `conversation_requests`。`snapshots` 以 `(scope, kind, id)` 作主键，保存领域快照的内部 JSON 与排序键；kind 区分角色、会话、消息、任务和笔记。领域对象、HTTP 响应与 Room 行通过 data 模块转换。当前不做本地全文检索，后续按需要拆分专用表，导出的 schema 用于迁移。
+
+每条记录都有连接范围 `scope`，当前由服务地址与访问凭证指纹产生，原始凭证不进 Room。切换连接后界面与观察任务一起切换，不能显示上一范围的数据。正式认证后使用服务端验证的稳定账号标识。
 
 `outbox` 至少记录本地消息 ID、目标会话、请求键、请求内容和重试状态。网络恢复后沿用原请求键提交，不生成新键。云端会话尚未创建时先保留草稿，首版不支持离线创建新会话后自动关联。
 
-发送状态单独使用 `pending`、`sending`、`acknowledged`、`failed`。HTTP 超时只表示未收到结果，不能据此认定服务端未受理。永久校验错误交给用户处理，临时网络错误才进入有限重试。
+当前待发送项保留原请求内容、请求键、消息 ID、可展示错误与是否明确被拒绝；成功确认后与任务、消息快照同事务提交并移除待发送项。HTTP 超时只表示未收到结果，不能据此认定服务端未受理。重试由用户触发，受理不明的项目不能直接移除。
 
-本地业务表不保存访问令牌、模型密钥或服务端私有提示词。客户端所需凭证使用专门的安全存储方案，在认证阶段实现。
+本地业务表不保存访问令牌、模型密钥或服务端私有提示词。开发连接使用 Android Keystore 加密保存，应用禁用备份。草稿目前仅在 ViewModel 内按会话保留，持久草稿与 SSE 序号事务在阶段 6B 实施。
 
 ## 事务与恢复规则
 

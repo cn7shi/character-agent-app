@@ -4,7 +4,7 @@
 
 ## 当前进度
 
-已完成阶段 5：后端支持角色、会话、持久化聊天、取消、断流恢复、最小工具执行循环与实际笔记保存。默认使用两条固定回复和规则驱动的笔记示例，可完全不配置 AI 继续联调。57 项测试及本机 HTTP/SSE 检查通过。OpenAI 兼容文本接口和凭证保护已具备；真实模型联调、Android 可运行工程及 MCP 尚未完成。
+阶段 6A 已加入 Kotlin/Compose 原生客户端：角色、会话、聊天、笔记与设置页面，Room 缓存、固定请求重试和基础深浅色。12 项 Android 网络/数据测试通过，包含 Kotlin 仓库实际连接本机 Python 后端。后端继续支持模拟回复、Agent 笔记与凭证保护，不配置真实 AI 也可联调；此前后端 57 项测试通过。Android SSE、设备交互验收、完整原型视觉、真实模型联调和 MCP 仍待后续阶段。
 
 代码仓库：私有仓库 [cn7shi/character-agent-app](https://github.com/cn7shi/character-agent-app)。按阶段提交源码、接口和设计记录，运行数据与凭证留在本机。
 
@@ -16,9 +16,10 @@
 - [数据模型](docs/data-model.md)：本地与服务端保存什么，如何隔离与对齐。
 - [接口草案](contracts/api-v1.md)：角色、会话、任务和流式事件。
 - [后端运行说明](backend/README.md)：启动、身份、当前接口与检查命令。
+- [Android 运行说明](android/README.md)：构建、安装、本机连接与当前客户端范围。
 - [模型配置与凭证保护](docs/model-configuration.md)：本机配置、兼容范围、Git 检查与日志处理。
 - [无需 AI 的演示](docs/offline-demo.md)：两条固定回复、笔记示例与运行方法。
-- [阶段报告](docs/stage-reports/05-agent-and-notes.md)：本次交付、核验和未实现范围。
+- [阶段报告](docs/stage-reports/06a-android-client.md)：本次交付、核验和未实现范围。
 - [设计决策记录](docs/decisions.md)：为什么这样写、取舍与未来调整条件。
 - [已实现接口](contracts/openapi-v1.json)：从当前代码生成的 OpenAPI。
 - [推进计划](docs/roadmap.md)：每一步的范围与验收条件。
@@ -51,10 +52,11 @@ Company/
     ├── feature/
     │   ├── characters/         角色页面
     │   ├── chat/               聊天页面
+    │   ├── notes/              笔记页面
     │   └── settings/           设置页面
     └── integrations/mcp/       可选设备侧 MCP 预留
 ```
 
 每次任务明确由哪一端执行；首版在线任务在后端。客户端读取业务状态并呈现，同一数据可用于不同布局和主题。
 
-原型参考目录为 `E:\MYcode\IOSH5DEMO`，仅作设计与实现参考，不作为新项目的运行依赖。下一步推进 Android 原生工程、Room 和基础页面，直接用模拟后端联调；真实 AI 可以后续配置。
+原型参考目录为 `E:\MYcode\IOSH5DEMO`，仅作设计与实现参考，不作为新项目的运行依赖。下一步接入 Android SSE、持久草稿并完成设备验收，再完善原型视觉；真实 AI 可以后续配置。

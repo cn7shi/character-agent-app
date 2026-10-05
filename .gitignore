@@ -48,3 +48,5 @@ logs/
 *.p12
 *.pfx
 *.key
+*.hprof
+hs_err_pid*
