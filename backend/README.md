@@ -34,6 +34,9 @@ uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
 | 操作 | 行为 |
 | --- | --- |
 | `GET /health` | 健康检查 |
+| `GET /v1/me/profile` | 当前用户昵称、简介、版本，未设置时返回空资料 |
+| `PUT /v1/me/profile` | 首次保存或编辑资料，检查版本与重复请求 |
+| `POST /v1/me/profile/reset` | 清空昵称和简介，保留版本与其他业务数据 |
 | `GET /v1/characters` | 角色分页列表 |
 | `GET /v1/characters/{character_id}` | 角色公开资料，不返回私有人设 |
 | `GET /v1/characters/{character_id}/definition` | 仅所有者可读的当前人设与笔记能力 |
@@ -69,7 +72,7 @@ uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
 .\.venv\Scripts\python.exe scripts\demo_chat.py
 ```
 
-第一条运行 64 项测试，覆盖聊天、供应商协议、凭证保护、工具权限与笔记，以及私有角色隔离、版本重试与冲突、旧库迁移、删除保留聊天和人设原子提交。第二条强制使用模拟配置启动本机服务，验证断流重连、取消、中断恢复、笔记持久化与重试；结束后清理测试进程与数据。第三条导出 OpenAPI。第四条在独立临时数据库运行两条固定回复和一次笔记保存，输出对话与笔记。导出与演示不读取本机模型配置，全部自动测试都不调用外部付费模型。
+第一条运行 70 项测试，覆盖聊天、供应商协议、凭证保护、工具权限与笔记、私有角色管理，以及个人资料隔离、重试与版本冲突、重置保留、事务失败、服务重启和旧库迁移。第二条强制使用模拟配置启动本机服务，验证断流重连、取消、中断恢复、笔记持久化与重试；结束后清理测试进程与数据。第三条导出 OpenAPI。第四条在独立临时数据库运行两条固定回复和一次笔记保存，输出对话与笔记。导出与演示不读取本机模型配置，全部自动测试都不调用外部付费模型。
 
 Windows 的异步运行时需要本机回环连接；在限制回环的沙箱中执行测试会阻塞，应在允许本机网络的开发终端运行。当前测试依赖的 TestClient 对 httpx 兼容接口有弃用提示，不影响已通过的测试；后续统一升级测试客户端时处理。
 
@@ -87,4 +90,4 @@ Windows 的异步运行时需要本机回环连接；在限制回环的沙箱中
 | `migrations` | 带校验记录的数据库迁移 |
 | `tests` | 用独立临时数据库验证业务行为 |
 
-`main.py` 组装依赖并统一错误格式。接口不直接操作 SQL，领域模块不依赖 FastAPI。关键选择的原因见 [设计决策](../docs/decisions.md)，本阶段结果见 [阶段报告](../docs/stage-reports/05-agent-and-notes.md)。
+`main.py` 组装依赖并统一错误格式。接口不直接操作 SQL，领域模块不依赖 FastAPI。关键选择的原因见 [设计决策](../docs/decisions.md)，最新功能结果见 [6C2 报告](../docs/stage-reports/06c2-personal-profile.md)，当前停点与接手流程见 [交接说明](../docs/handoff.md)。

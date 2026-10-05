@@ -4,7 +4,9 @@
 
 ## 当前进度
 
-阶段 6C2 已完成个人资料：原生“我的”页面可查看、保存、修改昵称和简介，确认后重置；重开可恢复，身份之间隔离，重置保留角色、聊天和笔记。此前已支持私有角色创建、编辑、删除和开聊。70 项后端测试、71 项 Android 测试通过，本轮四个模拟器页面检查点通过；详见 [个人资料报告](docs/stage-reports/06c2-personal-profile.md)。后端保持固定回复，不配置真实 AI 也可联调。下一步逐项交付会话改名/搜索与笔记编辑/删除，再完善原型主题；剩余设备验收继续保留。
+截至 2026-10-05，功能开发按用户要求暂时暂停，完成阶段为 **6C2 个人资料**；6C3 尚未开始。接手请先读 [项目现状与交接说明](docs/handoff.md)，其中包含已做/未做、验证证据、新环境启动、代码入口和恢复开发顺序。收到新的继续开发指示后再推进功能。
+
+阶段 6C2 已完成个人资料：原生“我的”页面可查看、保存、修改昵称和简介，确认后重置；重开可恢复，身份之间隔离，重置保留角色、聊天和笔记。此前已支持私有角色创建、编辑、删除和开聊。最近功能验证为 70 项后端测试、71 项 Android 测试及四个模拟器页面检查点通过；详见 [个人资料报告](docs/stage-reports/06c2-personal-profile.md)。后端保持固定回复，不配置真实 AI 也可联调。恢复开发后逐项交付会话改名/搜索与笔记编辑/删除，再完善原型主题；剩余设备验收继续保留。
 
 代码仓库：私有仓库 [cn7shi/character-agent-app](https://github.com/cn7shi/character-agent-app)。按阶段提交源码、接口和设计记录，运行数据与凭证留在本机。
 
@@ -12,6 +14,7 @@
 
 ## 阅读入口
 
+- [项目现状与交接说明](docs/handoff.md)：当前停点、完整功能清单、缺口与接手步骤。
 - [总体设计](docs/architecture.md)：两端职责、模块边界和执行归属。
 - [数据模型](docs/data-model.md)：本地与服务端保存什么，如何隔离与对齐。
 - [接口草案](contracts/api-v1.md)：角色、会话、任务和流式事件。
@@ -20,7 +23,7 @@
 - [模型配置与凭证保护](docs/model-configuration.md)：本机配置、兼容范围、Git 检查与日志处理。
 - [无需 AI 的演示](docs/offline-demo.md)：两条固定回复、笔记示例与运行方法。
 - [网络可靠性](docs/network-reliability.md)：适配器边界、重试、恢复及能力范围。
-- [最新阶段报告](docs/stage-reports/06c1-character-management.md)：角色创建、编辑、删除与实际页面验收。
+- [最新功能阶段报告](docs/stage-reports/06c2-personal-profile.md)：个人资料保存、修改、重置与实际页面验收。
 - [设备验收清单](docs/device-acceptance.md)：已验收和仍须验证的具体场景。
 - [OCR 委托审查](docs/stage-reports/06b1-ocr-review.md)：覆盖范围、4 项问题、修复与回归证据。
 - [设计决策记录](docs/decisions.md)：为什么这样写、取舍与未来调整条件。
@@ -56,6 +59,7 @@ Company/
     │   ├── characters/         角色页面
     │   ├── chat/               聊天页面
     │   ├── notes/              笔记页面
+    │   ├── profile/            个人资料查看、编辑与重置
     │   └── settings/           设置页面
     └── integrations/mcp/       可选设备侧 MCP 预留
 ```

@@ -2,7 +2,7 @@
 
 本项目采用 Android 原生客户端与独立后端。角色聊天是入口，角色可以通过 Agent 调用工具完成任务。界面、业务规则、数据保存、通信方式与模型服务分别设计，使多套主题和页面能够复用能力。
 
-状态：后端已实现持久化聊天、固定回复、最小工具循环与笔记，以及兼容文本适配。阶段 6A 加入可构建的 Android 客户端、Room 和 HTTP 快照对齐；真实模型工具调用、外部供应商联调、Android SSE、设备验收和 MCP 尚未完成。Android 范围见 [运行说明](../android/README.md)。
+状态：截至阶段 6C2，后端已实现持久化聊天、固定回复、最小工具循环与笔记、兼容文本适配、私有角色管理和个人资料。Android 已实现 Room、HTTP/SSE 对齐、有限重试与查询回退、消息草稿及相应原生页面；部分模拟器验收通过，完整设备验收仍有剩余。真实模型工具调用、外部供应商联调、完整原型主题、客户端本地 Agent 和 MCP 尚未实现或验收。当前功能开发暂停，详见 [交接说明](handoff.md)；Android 范围见 [运行说明](../android/README.md)。
 
 ## 本阶段的设计选择
 
@@ -49,7 +49,7 @@ Room 不会自动完成云同步。数据库记录、网络响应和 UI 状态�
 
 ## Android 模块
 
-阶段 6A 已启用 app、domain、network、data、designsystem 和四个 feature 模块。表中注明预留的模块仍仅有目录，不加入构建。
+截至阶段 6C2，已启用 app、domain、network、data、designsystem 和五个 feature 模块。表中注明预留的模块仍仅有目录，不加入构建。
 
 | 目录 | 职责 | 依赖约束 |
 | --- | --- | --- |
@@ -61,10 +61,11 @@ Room 不会自动完成云同步。数据库记录、网络响应和 UI 状态�
 | `core/agent` | 轻量执行协调与本地任务预留 | 依赖 `domain`，不复制在线执行循环 |
 | `core/tools` | 设备本地工具预留 | 通过接口按需接入 Android 能力 |
 | `core/designsystem` | 主题与共享 Compose 组件 | 不依赖模型和存储实现 |
-| `feature/characters` | 角色列表与资料 | 依赖 `domain`、`designsystem` |
-| `feature/chat` | 会话、消息和任务的不同布局 | 依赖 `domain`、`designsystem` |
+| `feature/characters` | 角色列表、私有角色创建/编辑/删除 | 读取领域模型，通过回调提交操作，沿用上层主题 |
+| `feature/chat` | 消息、草稿和任务状态；目前一种聊天布局 | 读取领域模型，通过回调提交操作，沿用上层主题 |
 | `feature/notes` | 实际保存的笔记列表与正文 | 只读领域笔记，不执行工具 |
 | `feature/settings` | 主题与连接设置 | 通过业务接口读写配置 |
+| `feature/profile` | 昵称、简介查看/编辑/重置 | 只读业务状态与回调，不直接访问数据库或模型 |
 | `integrations/mcp` | 未来设备侧 MCP 适配 | 首个远程 MCP 接入在后端实现 |
 
 页面不直接构造 SQL 或模型请求。不同布局可以有不同临时界面状态，发送、保存与任务执行规则仍然复用。

@@ -1,6 +1,6 @@
 # Android 原生客户端
 
-已建立 Kotlin/Compose 多模块工程、Room 缓存与待发送记录、HTTP/SSE 后端适配，以及角色、会话、聊天、笔记和连接设置页面。默认连接现有模拟后端，不需要真实 AI；首次加载与发送仍需要本机后端运行。
+已建立 Kotlin/Compose 多模块工程、Room 缓存与待发送记录、HTTP/SSE 后端适配，以及角色管理、会话、聊天、笔记、个人资料和连接设置页面。默认连接现有模拟后端，不需要真实 AI；首次加载与发送仍需要本机后端运行。当前停在 6C2，功能开发暂时暂停，接手请读 [交接说明](../docs/handoff.md)。
 
 这是一份开发版客户端。当前没有正式登录、后台自动发送或原型级视觉还原。网络恢复、本地草稿与数据库升级已完成本机测试，并已完成 13 个 Android 15 设备/主机检查点，含前台强杀、部分回复取消和历史 APK 覆盖升级；完整设备验收仍有未覆盖项。实际验证见 [阶段报告](../docs/stage-reports/06b2c-recovery-and-upgrade.md)，策略详见 [网络可靠性](../docs/network-reliability.md)。
 
@@ -58,7 +58,7 @@ backend/.venv/Scripts/python.exe backend/scripts/check_android.py
 
 脚本创建隔离的本机模拟后端，运行 Kotlin 策略、网络、Room、迁移与 ViewModel 共 71 项测试。内存模拟和两种 HTTP 模式运行同一聊天业务契约，真实 SSE 直接更新 Room，并发送聊天和笔记指令，核验落库、重开数据库和用户隔离；另覆盖草稿、发送交接、旧库升级、模式切换、取消、退出时序、角色管理，以及资料保存/重置丢失响应后恢复、冲突读取、缓存版本保护、页面状态与双 HTTP 模式资料联调。凭证只从临时文件读取，不写源码、命令参数或日志；结束后清理测试服务和数据。需要本机网络、JDK/SDK、Python 开发环境及 Gradle 依赖下载权限。
 
-单独运行 `:core:domain:test :core:network:test :core:data:testDebugUnitTest :app:testDebugUnitTest` 时，不配置隔离后端的 4 项真实 HTTP 用例会跳过。Room 与 ViewModel 测试采用 Robolectric（API 34），不能代替设备检查。草稿复查见 [草稿报告](../docs/stage-reports/06b2a-persistent-drafts.md)，设备进度见 [验收清单](../docs/device-acceptance.md)。
+单独运行 `:core:domain:test :core:network:test :core:data:testDebugUnitTest :app:testDebugUnitTest` 时，不配置隔离后端的 5 项真实 HTTP 用例会跳过。Room 与 ViewModel 测试采用 Robolectric（API 34），不能代替设备检查。草稿复查见 [草稿报告](../docs/stage-reports/06b2a-persistent-drafts.md)，设备进度见 [验收清单](../docs/device-acceptance.md)。
 
 ### 设备自动检查
 
