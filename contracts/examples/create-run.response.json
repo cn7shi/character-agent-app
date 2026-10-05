@@ -2,7 +2,7 @@
   "id": "33333333-3333-4333-8333-333333333333",
   "conversation_id": "44444444-4444-4444-8444-444444444444",
   "executor": "server",
-  "model_name": "mock-v1",
+  "model_name": "mock-v2",
   "is_simulated": true,
   "status": "queued",
   "last_event_sequence": 1,

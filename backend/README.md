@@ -1,6 +1,6 @@
 # 角色应用服务端
 
-阶段 4A 已实现：原有持久化聊天基础上加入可配置的 OpenAI 兼容文本适配、本机凭证隔离、日志脱敏与 Git 检查。默认仍使用模拟聊天。外部供应商尚未选定，真实模型联调、Agent、MCP 和正式账号认证尚未完成。
+阶段 5 已实现：持久化聊天、可配置的 OpenAI 兼容文本适配、凭证保护，以及使用固定规则的最小 Agent 和真实保存的笔记工具。默认模拟聊天不需要 AI 密钥。外部供应商尚未选定，真实模型工具适配、MCP 和正式账号认证尚未完成。
 
 ## 启动
 
@@ -43,6 +43,9 @@ uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
 | `GET /v1/runs/{run_id}` | 查询任务与回复快照 |
 | `GET /v1/runs/{run_id}/events` | SSE 事件，支持 Last-Event-ID 恢复 |
 | `POST /v1/runs/{run_id}/cancel` | 幂等请求取消，保留已保存的部分回复 |
+| `GET /v1/runs/{run_id}/tool-calls` | 当前任务的工具调用记录 |
+| `GET /v1/notes` | 当前用户的笔记分页列表，可按会话筛选 |
+| `GET /v1/notes/{note_id}` | 当前用户的笔记详情 |
 
 创建会话需要 UUID 格式的 `Idempotency-Key`，请求体包含 `character_id` 和可选 `title`。省略或传入 `null` 时使用角色名称；文本先去除首尾空白，再检查 1 至 100 个字符。首次返回 201，相同请求重试返回 200，同键不同内容返回 409。
 
@@ -50,7 +53,9 @@ uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
 
 当前一个数据目录只允许一个开发服务进程。后台最多同时运行 8 个任务，每个会话只能有一个活动任务。默认生成时限为 30 秒，可在模型配置中调整；回复上限 16000 字符。重启将未完成任务标记失败，不自动重放。启动脚本保持单进程，不要增加 `--workers`。
 
-完整规则见 [接口约定](../contracts/api-v1.md)。[生成的 OpenAPI](../contracts/openapi-v1.json) 描述当前已实现的 10 项操作。
+默认 `mock-v2` 提供两条固定回复。在林舟的新会话发送“记笔记：周末安排；买咖啡；看电影”，会按固定规则整理并真正保存笔记；已有会话仍使用原人设权限。最多 3 次工具轮次加 1 次回复轮次，只有真实保存结果才能触发成功回复。取消不撤销已提交的笔记，重试同一次调用不重复保存。使用方法见 [无 AI 联调演示](../docs/offline-demo.md)。
+
+完整规则见 [接口约定](../contracts/api-v1.md)。[生成的 OpenAPI](../contracts/openapi-v1.json) 描述当前已实现的 13 项操作。
 
 ## 验证
 
@@ -58,9 +63,10 @@ uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
 .\run-tests.ps1
 .\.venv\Scripts\python.exe scripts\smoke_server.py
 .\.venv\Scripts\python.exe scripts\export_openapi.py
+.\.venv\Scripts\python.exe scripts\demo_chat.py
 ```
 
-第一条运行 46 项测试，覆盖原有行为、供应商协议与真实本机 HTTP 适配、取消释放连接、日志脱敏、配置校验和 Git 敏感信息拦截。第二条强制使用模拟配置启动本机服务，验证断流重连、取消、中断恢复、持久化与重试；结束后清理测试进程与数据。第三条导出 OpenAPI，不读取本机模型配置。全部自动测试都不调用外部付费模型。
+第一条运行 57 项测试，覆盖聊天、供应商协议、凭证保护，以及工具权限、去重、回滚、取消、步数限制和笔记隔离。第二条强制使用模拟配置启动本机服务，验证断流重连、取消、中断恢复、笔记持久化与重试；结束后清理测试进程与数据。第三条导出 OpenAPI。第四条在独立临时数据库运行两条固定回复和一次笔记保存，输出对话与笔记。导出与演示不读取本机模型配置，全部自动测试都不调用外部付费模型。
 
 Windows 的异步运行时需要本机回环连接；在限制回环的沙箱中执行测试会阻塞，应在允许本机网络的开发终端运行。当前测试依赖的 TestClient 对 httpx 兼容接口有弃用提示，不影响已通过的测试；后续统一升级测试客户端时处理。
 
@@ -70,12 +76,12 @@ Windows 的异步运行时需要本机回环连接；在限制回环的沙箱中
 | --- | --- |
 | `src/character_app/api` | 身份解析、请求校验、响应模型和路由 |
 | `src/character_app/domain` | 实体、错误和仓库接口 |
-| `src/character_app/application` | 业务操作、分页游标、任务调度与事件订阅 |
+| `src/character_app/application` | 业务操作、分页游标、任务调度、工具注册与事件订阅 |
 | `src/character_app/adapters/storage` | SQLite 仓库、短连接、事务和迁移 |
 | `src/character_app/adapters/models` | 模拟与 OpenAI 兼容文本适配、客户端生命周期及日志保护 |
-| `src/character_app/adapters/tools` | 内置工具预留 |
+| `src/character_app/adapters/tools` | 内置笔记工具；扩展其他工具实现的位置 |
 | `src/character_app/adapters/mcp` | 远程 MCP 接入预留 |
 | `migrations` | 带校验记录的数据库迁移 |
 | `tests` | 用独立临时数据库验证业务行为 |
 
-`main.py` 组装依赖并统一错误格式。接口不直接操作 SQL，领域模块不依赖 FastAPI。关键选择的原因见 [设计决策](../docs/decisions.md)，本阶段结果见 [阶段报告](../docs/stage-reports/04a-model-adapter-and-secrets.md)。
+`main.py` 组装依赖并统一错误格式。接口不直接操作 SQL，领域模块不依赖 FastAPI。关键选择的原因见 [设计决策](../docs/decisions.md)，本阶段结果见 [阶段报告](../docs/stage-reports/05-agent-and-notes.md)。

@@ -108,7 +108,7 @@ def main():
             assert status == 201
             assert request(base, f"/v1/conversations/{conversation['id']}/messages", token=token_b)[0] == 404
             status, schema = request(base, "/openapi.json")
-            assert status == 200 and len(schema["paths"]) == 9
+            assert status == 200 and len(schema["paths"]) == 12
             run_path = f"/v1/conversations/{conversation['id']}/runs"
             run_payload = {"client_message_id": str(uuid4()), "text": "真实连接断流验证"}
             run_key = str(uuid4())
@@ -125,6 +125,16 @@ def main():
             events(base, cancel_run["id"], token_a, stop_after_update=True)
             request(base, f"/v1/runs/{cancel_run['id']}/cancel", token=token_a, payload={})
             assert events(base, cancel_run["id"], token_a)[-1]["type"] == "run.cancelled"
+            note_key = str(uuid4())
+            note_payload = {"client_message_id": str(uuid4()), "text": "记笔记：本机联调；保存和重启；不调用真实 AI"}
+            _, note_run = request(base, run_path, token=token_a, payload=note_payload, key=note_key)
+            note_events = events(base, note_run["id"], token_a)
+            assert note_events[-1]["type"] == "run.completed"
+            tool_event = next(e for e in note_events if e["type"] == "tool.completed")
+            note_id = tool_event["data"]["tool_call"]["result"]["note_id"]
+            status, note = request(base, f"/v1/notes/{note_id}", token=token_a)
+            assert status == 200 and note["title"] == "本机联调"
+            assert request(base, f"/v1/notes/{note_id}", token=token_b)[0] == 404
             _, interrupted = request(base, run_path, token=token_a, payload={"client_message_id": str(uuid4()), "text": "进程中断验证"}, key=str(uuid4()))
             events(base, interrupted["id"], token_a, stop_after_update=True)
         with server(directory, port) as base:
@@ -139,8 +149,12 @@ def main():
             assert recovered["status"] == "failed" and recovered["error"]["code"] == "RUN_INTERRUPTED"
             assert recovered["output_message"]["blocks"]
             _, history = request(base, f"/v1/conversations/{conversation['id']}/messages", token=token_a)
-            assert len(history["items"]) == 6
-        print(json.dumps({"real_http": "passed", "anonymous_rejected": True, "cross_user_isolation": True, "live_sse_disconnect_and_resume": True, "cancellation": True, "process_restart_persistence": True, "interrupted_run_recovery": True, "retry_after_restart": True, "server_stopped": True}, indent=2))
+            assert len(history["items"]) == 8
+            assert request(base, f"/v1/notes/{note_id}", token=token_a)[1] == note
+            status, note_retry = request(base, run_path, token=token_a, payload=note_payload, key=note_key)
+            assert status == 200 and note_retry["id"] == note_run["id"]
+            assert len(request(base, "/v1/notes", token=token_a)[1]["items"]) == 1
+        print(json.dumps({"real_http": "passed", "anonymous_rejected": True, "cross_user_isolation": True, "live_sse_disconnect_and_resume": True, "cancellation": True, "process_restart_persistence": True, "interrupted_run_recovery": True, "retry_after_restart": True, "tool_note_persistence_and_deduplication": True, "server_stopped": True}, indent=2))
 
 
 if __name__ == "__main__":

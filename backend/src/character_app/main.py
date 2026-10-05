@@ -10,10 +10,13 @@ from starlette.exceptions import HTTPException
 
 from character_app.adapters.storage.sqlite import Database, SqliteCatalogRepository
 from character_app.adapters.storage.chat import SqliteChatRepository
+from character_app.adapters.storage.tools import SqliteToolStore
+from character_app.adapters.tools.notes import SaveNoteTool
 from character_app.adapters.storage.service_lock import ServiceLock
 from character_app.adapters.models.factory import configured_model
 from character_app.adapters.models.logging_guard import redact_model_secret
 from character_app.application.chat import ChatService
+from character_app.application.agent import NotesService, ToolRegistry
 from character_app.domain.chat import TextModel
 from character_app.api.auth import DevelopmentIdentityResolver, RejectingIdentityResolver
 from character_app.api.routes import router
@@ -51,11 +54,14 @@ def create_app(settings: Settings | None = None, *, model: TextModel | None = No
                 database.seed([principal for principal, _ in users])
             app.state.identities = DevelopmentIdentityResolver(users) if settings.dev_auth else RejectingIdentityResolver()
             app.state.catalog = CatalogService(SqliteCatalogRepository(database), CursorCodec(key))
+            tool_store = SqliteToolStore(database)
+            registry = ToolRegistry(tool_store, [SaveNoteTool(tool_store)])
+            app.state.notes = NotesService(tool_store, CursorCodec(key))
             config = load_model_settings() if use_local_model_config else model_settings or ModelSettings()
             with redact_model_secret(config.api_key.get_secret_value()):
                 async with configured_model(config) as selected_model:
                     service = ChatService(SqliteChatRepository(database), model or selected_model,
-                                          run_timeout if run_timeout is not None else config.timeout_seconds)
+                                          run_timeout if run_timeout is not None else config.timeout_seconds, registry)
                     app.state.chat = service
                     if settings.dev_auth:
                         await service.start()
@@ -66,8 +72,8 @@ def create_app(settings: Settings | None = None, *, model: TextModel | None = No
                             await service.close()
 
     app = FastAPI(
-        title="Character App API", version="0.4.0", lifespan=lifespan,
-        description="Local development catalog, persisted chat and resumable SSE. Mock by default; optional OpenAI-compatible text provider. Credentials remain server-side.",
+        title="Character App API", version="0.5.0", lifespan=lifespan,
+        description="Local development chat with fixed demo replies, bounded tool execution and persisted notes. Optional compatible text provider; live model tool calling is not integrated.",
         docs_url="/docs" if settings.dev_auth else None,
         redoc_url=None,
         openapi_url="/openapi.json" if settings.dev_auth else None,

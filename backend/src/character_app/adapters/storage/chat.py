@@ -90,7 +90,7 @@ class SqliteChatRepository:
         with self.database.connect() as connection:
             connection.execute("BEGIN")
             run = self._row(connection, user_id, run_id)
-            persona = connection.execute("SELECT ch.name, cr.system_prompt FROM conversations c JOIN characters ch ON ch.id = c.character_id JOIN character_revisions cr ON cr.id = c.character_revision_id WHERE c.user_id = ? AND c.id = ?", (user_id, run["conversation_id"])).fetchone()
+            persona = connection.execute("SELECT ch.name, cr.system_prompt, cr.allowed_tool_ids FROM conversations c JOIN characters ch ON ch.id = c.character_id JOIN character_revisions cr ON cr.id = c.character_revision_id WHERE c.user_id = ? AND c.id = ?", (user_id, run["conversation_id"])).fetchone()
             # D12: include completed prior turns, not failed/cancelled partial replies.
             rows = connection.execute(
                 "SELECT m.* FROM messages m JOIN runs r ON r.id = m.run_id WHERE m.user_id = ? AND m.conversation_id = ? AND m.status = 'completed' AND (r.status = 'completed' OR r.id = ?) ORDER BY m.sequence DESC LIMIT 21",
@@ -100,7 +100,7 @@ class SqliteChatRepository:
             # Current user input + up to ten complete turns; evict pairs, never start with an orphan assistant.
             while len(messages) > 1 and sum(len(m.text) for m in messages) > 48000:
                 messages = messages[2:]
-            return ModelContext(persona["name"], persona["system_prompt"], messages)
+            return ModelContext(persona["name"], persona["system_prompt"], messages, tuple(json.loads(persona["allowed_tool_ids"])))
 
     def update_text(self, user_id, run_id, text):
         with self.database.transaction() as connection:

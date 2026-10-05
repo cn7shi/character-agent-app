@@ -1,6 +1,6 @@
 # 业务 API 与流式事件草案
 
-状态：10 项业务操作已经实现并通过验证；阶段 4A 新增兼容模型适配与模型错误分类，不增加业务接口。工具相关事件仍为草案。已实现响应以 [生成的 OpenAPI](openapi-v1.json) 为准。接口独立于具体界面、Room 表结构和模型供应商；存储约束见 [数据模型](../docs/data-model.md)。
+状态：包括健康检查在内的 13 项操作已经实现并通过验证；阶段 5 新增工具记录、笔记查询与工具事件。已实现响应以 [生成的 OpenAPI](openapi-v1.json) 为准。接口独立于具体界面、Room 表结构和模型供应商；存储约束见 [数据模型](../docs/data-model.md)。
 
 ## 通用约定
 
@@ -27,6 +27,9 @@
 | `GET /v1/runs/{run_id}` | 读取执行状态及当前回复快照 | 200，执行对象 | 3 |
 | `GET /v1/runs/{run_id}/events` | 订阅或恢复事件流 | 200，`text/event-stream` | 3 |
 | `POST /v1/runs/{run_id}/cancel` | 请求停止后续生成或执行 | 200，当前执行对象 | 3 |
+| `GET /v1/runs/{run_id}/tool-calls` | 查询当前用户任务的工具记录 | 200，`items`，最多 3 条 | 5 |
+| `GET /v1/notes` | 当前用户笔记，支持 `conversation_id` 筛选 | 200，分页笔记对象 | 5 |
+| `GET /v1/notes/{note_id}` | 笔记详情 | 200，笔记对象 | 5 |
 
 角色列表按固定 `(created_at, id)` 升序分页，会话列表按 `(updated_at, id)` 降序分页，消息按 `sequence` 降序分页。游标由服务端产生并校验；会话列表在更新期间允许出现重复项，客户端按 ID 合并，首版不承诺跨请求快照一致性。
 
@@ -65,7 +68,7 @@
 
 `completed`、`failed`、`cancelled` 是不可更改的终态。取消与完成并发时，以先提交的终态为准；进入终态后再次取消返回当前状态。`cancel_requested` 表示已记录停止意图，还不能向用户显示已停止。
 
-执行对象包含 `id`、`conversation_id`、`executor`、`model_name`、`is_simulated`、`status`、`last_event_sequence`、`input_message`、`output_message`、`error`、`created_at`、`updated_at`。非失败状态 `error` 为 `null`，失败时至少包含 `code` 和可展示的 `message`。默认使用 `mock-v1`，`is_simulated` 为 `true`，文本也明确标记模拟回复。选择兼容适配后保存配置中的模型名称，并设置 `is_simulated: false`；这个字段表达使用的适配类型，不表示对应供应商已通过认证或验证。
+执行对象包含 `id`、`conversation_id`、`executor`、`model_name`、`is_simulated`、`status`、`last_event_sequence`、`input_message`、`output_message`、`error`、`created_at`、`updated_at`。非失败状态 `error` 为 `null`，失败时至少包含 `code` 和可展示的 `message`。默认使用 `mock-v2`，`is_simulated` 为 `true`，文本也明确标记模拟回复。选择兼容适配后保存配置中的模型名称，并设置 `is_simulated: false`；这个字段表达使用的适配类型，不表示对应供应商已通过认证或验证。
 
 模型生成超时使用 `MODEL_TIMEOUT`，模型异常或超过输出限制使用 `MODEL_ERROR`，开发服务重启中断使用 `RUN_INTERRUPTED`。已保存的部分回复保留并标记失败或取消；助手消息仅在生成正常结束时标记 `completed`。
 
@@ -88,6 +91,20 @@
 
 公开错误不包含供应商响应正文、URL、认证头或密钥。当前兼容适配支持范围见 [模型配置](../docs/model-configuration.md)。
 
+## 工具与笔记
+
+当前模拟适配按固定“记笔记”指令产生结构化工具请求；使用方法见 [无 AI 联调演示](../docs/offline-demo.md)。笔记会真正保存，`is_simulated` 描述回复规划方式，不表示工具结果也是虚构的。兼容模型目前仍只支持文本，还不能驱动工具。
+
+工具只从服务端注册表选择，按会话固定人设版本检查权限；身份和会话取自任务，不接受模型或客户端覆盖。林舟的新版本会话允许 `notes.save`，既有旧版本会话保留原权限。一次任务最多 3 次工具轮次加 1 次回复轮次，总时限和文本上限仍适用。
+
+工具记录包含 `id`、`conversation_id`、`run_id`、`call_id`、`tool_id`、`arguments`、`status`、`result`、`error`、`created_at`。当前短事务工具只保存 `completed` 或 `failed` 记录，失败的 `result` 为 `null`；参数校验或注册检查被拒绝时不回显原始参数。调用键 `(run_id, call_id)` 唯一，同键同请求返回原记录（包括失败），同键不同请求报冲突；回放事件不再次执行工具。
+
+`notes.save` 仅接受 `title`（去空白后 1–100 字符）与 `content`（1–16000 字符），成功结果包含 `note_id` 与 `title`。笔记响应包含 `id`、`conversation_id`、`source_run_id`、`source_tool_call_id`、`title`、`content`、`created_at`。笔记按 `(created_at, id)` 降序分页，游标绑定用户与 `conversation_id` 筛选范围；使用其他范围的游标返回 `422 VALIDATION_ERROR`。工具记录最多 3 条，查询返回 `items` 而不分页。
+
+笔记、工具成功记录和事件在同一事务提交。取消先被记录则不再创建笔记；笔记先提交则取消不撤销它。工具完成后回复生成仍可能失败，客户端应分别展示工具结果与任务状态。重启保留笔记并将中断任务标记失败，不自动重放工具。
+
+工具失败通过记录与任务终态表达，公开代码为 `TOOL_NOT_FOUND`、`TOOL_NOT_ALLOWED`、`TOOL_INVALID_ARGUMENTS`、`TOOL_CALL_CONFLICT`、`TOOL_EXECUTION_FAILED`、`AGENT_STEP_LIMIT`，错误文案不包含数据库或外部异常原文。
+
 ## 流式事件
 
 SSE 的 `id` 为当前任务内递增的整数序号，`event` 为事件类型，`data` 为单行 JSON。事件信封固定包含 `run_id`、`sequence`、`type`、`occurred_at` 和 `data`。`id` 与 `sequence` 一致，`event` 与 `type` 一致。
@@ -101,7 +118,11 @@ SSE 的 `id` 为当前任务内递增的整数序号，`event` 为事件类型�
 | `run.completed` | `status: completed` 与最终 `output_message` | 3 |
 | `run.failed` | `status: failed`、`error` 与当前 `output_message` | 3 |
 | `run.cancelled` | `status: cancelled` 与当前 `output_message` | 3 |
-| `tool.started`、`tool.completed`、`tool.failed` | 工具调用摘要，结构在工具阶段补充 | 5，当前不发送 |
+| `tool.started` | `tool_call_id`、`tool_id` | 5 |
+| `tool.completed` | `tool_call`，完整成功记录 | 5 |
+| `tool.failed` | `tool_call`，完整失败记录 | 5 |
+
+当前笔记工具的 `tool.started` 与 `tool.completed` 同事务保存并按序回放，不代表客户端一定能观察到持久的“执行中”状态。参数或权限拒绝直接产生 `tool.failed`，不产生开始事件。未来远程 MCP 的运行状态另行扩展。
 
 消息更新首版使用完整快照，内容可以逐步增长。客户端按消息 ID 替换内容，不把重复快照追加成重复台词。事件样例见 [消息事件](examples/message-updated.event.json)。传输示意如下，实际 `data` 放入样例文件中的完整 JSON：
 
@@ -134,10 +155,10 @@ data: <单行 JSON 事件信封>
 
 ## 必须在实现阶段验证的行为
 
-- 两个用户不能读取或操作对方的会话、消息、任务与事件流。
+- 两个用户不能读取或操作对方的会话、消息、任务、工具记录、笔记与事件流。
 - 相同创建请求并发重试只生成一套资源；同键不同内容返回冲突。
 - 同一角色可以拥有多个独立会话，不共享会话消息。
 - 事件重连不重复拼接文本，不重复调用模型或工具。
 - 取消、失败和断流不能显示成成功；重启不自动重放写操作。
 
-阶段 4A 累计通过 46 项测试。原有持久化、隔离、并发和恢复检查继续通过；新增协议解析、配置、脱敏、Git 检查以及本机供应商 HTTP 联调。选定外部模型和 Android Room 同步尚待后续验证。
+阶段 5 累计通过 57 项测试。原有聊天与模型协议检查继续通过；新增工具权限、并发去重、失败回滚、取消、恢复、步数限制与笔记分页隔离，并通过实际本机 HTTP/SSE 笔记持久化和重试检查。选定外部模型和 Android Room 同步尚待后续验证。

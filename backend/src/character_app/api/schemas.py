@@ -90,6 +90,35 @@ class RunResponse(BaseModel):
     updated_at: str
 
 
+class ToolCallResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    conversation_id: UUID
+    run_id: UUID
+    call_id: str
+    tool_id: str
+    arguments: dict
+    status: Literal["completed", "failed"]
+    result: dict | None
+    error: RunError | None
+    created_at: str
+
+
+class ToolCallList(BaseModel):
+    items: list[ToolCallResponse]
+
+
+class NoteResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    conversation_id: UUID
+    source_run_id: UUID
+    source_tool_call_id: UUID
+    title: str
+    content: str
+    created_at: str
+
+
 T = TypeVar("T")
 
 

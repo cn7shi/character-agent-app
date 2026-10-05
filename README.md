@@ -4,7 +4,7 @@
 
 ## 当前进度
 
-已完成阶段 3 与阶段 4A：后端支持角色、会话、持久化聊天、取消、断流恢复及可配置的 OpenAI 兼容文本接口，并加入凭证隔离、日志脱敏和 Git 提交/推送检查。46 项测试及本机 HTTP/SSE 检查通过。默认使用模拟回复；外部供应商待选定，真实模型联调、Android 可运行工程、Agent 和 MCP 尚未完成。
+已完成阶段 5：后端支持角色、会话、持久化聊天、取消、断流恢复、最小工具执行循环与实际笔记保存。默认使用两条固定回复和规则驱动的笔记示例，可完全不配置 AI 继续联调。57 项测试及本机 HTTP/SSE 检查通过。OpenAI 兼容文本接口和凭证保护已具备；真实模型联调、Android 可运行工程及 MCP 尚未完成。
 
 代码仓库：私有仓库 [cn7shi/character-agent-app](https://github.com/cn7shi/character-agent-app)。按阶段提交源码、接口和设计记录，运行数据与凭证留在本机。
 
@@ -17,7 +17,8 @@
 - [接口草案](contracts/api-v1.md)：角色、会话、任务和流式事件。
 - [后端运行说明](backend/README.md)：启动、身份、当前接口与检查命令。
 - [模型配置与凭证保护](docs/model-configuration.md)：本机配置、兼容范围、Git 检查与日志处理。
-- [阶段报告](docs/stage-reports/04a-model-adapter-and-secrets.md)：本次交付、核验和未实现范围。
+- [无需 AI 的演示](docs/offline-demo.md)：两条固定回复、笔记示例与运行方法。
+- [阶段报告](docs/stage-reports/05-agent-and-notes.md)：本次交付、核验和未实现范围。
 - [设计决策记录](docs/decisions.md)：为什么这样写、取舍与未来调整条件。
 - [已实现接口](contracts/openapi-v1.json)：从当前代码生成的 OpenAPI。
 - [推进计划](docs/roadmap.md)：每一步的范围与验收条件。
@@ -56,4 +57,4 @@ Company/
 
 每次任务明确由哪一端执行；首版在线任务在后端。客户端读取业务状态并呈现，同一数据可用于不同布局和主题。
 
-原型参考目录为 `E:\MYcode\IOSH5DEMO`，仅作设计与实现参考，不作为新项目的运行依赖。确定供应商并在本机填入配置后，再验证真实模型流式回复，继续保留模拟模式用于独立验证。
+原型参考目录为 `E:\MYcode\IOSH5DEMO`，仅作设计与实现参考，不作为新项目的运行依赖。下一步推进 Android 原生工程、Room 和基础页面，直接用模拟后端联调；真实 AI 可以后续配置。

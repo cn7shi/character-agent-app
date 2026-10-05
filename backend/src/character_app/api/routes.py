@@ -10,6 +10,7 @@ from character_app.domain.entities import Principal, AppError
 from .auth import current_user
 from .schemas import CharacterResponse, ConversationResponse, CreateConversationRequest, ErrorResponse, MessageResponse, Page
 from .schemas import CreateRunRequest, RunResponse
+from .schemas import NoteResponse, ToolCallList
 
 router = APIRouter(prefix="/v1", responses={
     code: {"model": ErrorResponse} for code in (401, 403, 404, 422, 500)
@@ -71,6 +72,21 @@ def run(run_id: UUID, request: Request, user: User):
 @router.post("/runs/{run_id}/cancel", response_model=RunResponse, tags=["Runs"])
 async def cancel_run(run_id: UUID, request: Request, user: User):
     return await request.app.state.chat.cancel(user.id, str(run_id))
+
+
+@router.get("/runs/{run_id}/tool-calls", response_model=ToolCallList, tags=["Tools"])
+def tool_calls(run_id: UUID, request: Request, user: User):
+    return {"items": request.app.state.notes.store.calls(user.id, str(run_id))}
+
+
+@router.get("/notes", response_model=Page[NoteResponse], tags=["Notes"])
+def notes(request: Request, user: User, limit: Limit = 20, cursor: Cursor = None, conversation_id: UUID | None = None):
+    return request.app.state.notes.list(user.id, str(conversation_id) if conversation_id else None, cursor, limit)
+
+
+@router.get("/notes/{note_id}", response_model=NoteResponse, tags=["Notes"])
+def note(note_id: UUID, request: Request, user: User):
+    return request.app.state.notes.store.note(user.id, str(note_id))
 
 
 @router.get("/runs/{run_id}/events", response_class=StreamingResponse,

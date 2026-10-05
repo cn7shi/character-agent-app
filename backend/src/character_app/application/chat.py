@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import aclosing
+from dataclasses import replace
 import hashlib
 import json
 import logging
@@ -7,16 +8,19 @@ import time
 
 from character_app.domain.chat import ChatRepository, TextModel, TERMINAL
 from character_app.domain.model_errors import ModelFailure, MESSAGES
+from character_app.domain.tools import ToolFailure, ToolRequest, TOOL_ERRORS
+from .agent import ToolRegistry
 
 logger = logging.getLogger(__name__)
 INTERRUPTED = {"code": "RUN_INTERRUPTED", "message": "服务已停止，任务未完成。"}
 
 
 class ChatService:
-    def __init__(self, repository: ChatRepository, model: TextModel, timeout: float = 30):
+    def __init__(self, repository: ChatRepository, model: TextModel, timeout: float = 30, tools: ToolRegistry | None = None):
         self.repository = repository
         self.model = model
         self.timeout = timeout
+        self.tools = tools
         self.closing = False
         self.wake = asyncio.Event()
         self.workers: dict[str, tuple[asyncio.Task, asyncio.Event]] = {}
@@ -81,43 +85,68 @@ class ChatService:
             context = await asyncio.to_thread(self.repository.context, user_id, run_id)
             deadline = time.monotonic() + self.timeout
             text = ""
-            async with aclosing(self.model.stream(context)) as stream:
-                while not stop.is_set():
-                    next_chunk = asyncio.create_task(anext(stream))
-                    stopped = asyncio.create_task(stop.wait())
-                    try:
-                        done, _ = await asyncio.wait({next_chunk, stopped}, timeout=max(0, deadline - time.monotonic()), return_when=asyncio.FIRST_COMPLETED)
-                        if stopped in done:
-                            break
-                        if next_chunk not in done:
-                            raise TimeoutError()
-                        try:
-                            chunk = next_chunk.result()
-                        except StopAsyncIteration:
-                            break
-                    finally:
-                        # Cancel only provider reads, never a database write running in a thread.
-                        for task in (next_chunk, stopped):
-                            if not task.done():
-                                task.cancel()
-                        await asyncio.gather(next_chunk, stopped, return_exceptions=True)
-                    text += chunk
-                    if len(text) > 16000:
-                        raise ValueError("Model output exceeds local limit")
-                    if not await asyncio.to_thread(self.repository.update_text, user_id, run_id, text):
-                        stop.set()
+            # D15: at most three tool turns followed by one reply; a looping planner cannot run forever.
+            for step in range(4):
+                text, request = await self._read_round(user_id, run_id, context, text, stop, deadline)
+                if stop.is_set() or self.closing or request is None:
+                    break
+                if step == 3:
+                    raise ToolFailure("AGENT_STEP_LIMIT")
+                if time.monotonic() >= deadline:
+                    raise TimeoutError()
+                if self.tools is None:
+                    raise ToolFailure("TOOL_NOT_FOUND")
+                call = await asyncio.to_thread(self.tools.execute, user_id, run_id, request)
+                if call is None:
+                    stop.set()
+                    break
+                if call.status == "failed":
+                    raise ToolFailure(call.error["code"])
+                context = replace(context, tool_results=(*context.tool_results, call))
             status = "failed" if self.closing else "cancelled" if stop.is_set() else "completed"
             await asyncio.to_thread(self.repository.finish, user_id, run_id, status, INTERRUPTED if self.closing else None)
         except Exception as exc:
-            code = exc.code if isinstance(exc, ModelFailure) else "MODEL_TIMEOUT" if isinstance(exc, TimeoutError) else "MODEL_ERROR"
+            code = exc.code if isinstance(exc, (ModelFailure, ToolFailure)) else "MODEL_TIMEOUT" if isinstance(exc, TimeoutError) else "MODEL_ERROR"
             # Provider exceptions may contain credentials/prompts; store only a safe public error.
-            error = {"code": code, "message": MESSAGES.get(code, "回复生成失败。")}
+            error = {"code": code, "message": TOOL_ERRORS.get(code, MESSAGES.get(code, "回复生成失败。"))}
             try:
                 await asyncio.to_thread(self.repository.finish, user_id, run_id, "failed", error)
             except Exception:
                 logger.exception("Could not persist terminal run state")
         finally:
             self.wake.set()
+
+    async def _read_round(self, user_id, run_id, context, text, stop, deadline):
+        async with aclosing(self.model.stream(context)) as stream:
+            while not stop.is_set():
+                next_chunk = asyncio.create_task(anext(stream))
+                stopped = asyncio.create_task(stop.wait())
+                try:
+                    done, _ = await asyncio.wait({next_chunk, stopped}, timeout=max(0, deadline - time.monotonic()), return_when=asyncio.FIRST_COMPLETED)
+                    if stopped in done:
+                        break
+                    if next_chunk not in done:
+                        raise TimeoutError()
+                    try:
+                        chunk = next_chunk.result()
+                    except StopAsyncIteration:
+                        break
+                finally:
+                    # Cancel only provider reads, never a database write running in a thread.
+                    for task in (next_chunk, stopped):
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(next_chunk, stopped, return_exceptions=True)
+                if isinstance(chunk, ToolRequest):
+                    return text, chunk
+                if not isinstance(chunk, str):
+                    raise ValueError("Unsupported model output")
+                text += chunk
+                if len(text) > 16000:
+                    raise ValueError("Model output exceeds local limit")
+                if not await asyncio.to_thread(self.repository.update_text, user_id, run_id, text):
+                    stop.set()
+        return text, None
 
     async def events(self, user_id, run_id, after):
         heartbeat = time.monotonic()

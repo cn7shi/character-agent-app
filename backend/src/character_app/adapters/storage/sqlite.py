@@ -90,6 +90,10 @@ class Database:
                     "INSERT OR IGNORE INTO character_revisions VALUES (?, ?, 1, ?, '[]')",
                     (character_id, character_id, prompt),
                 )
+            # D17: publish a new demo revision; existing conversations retain their original permissions.
+            connection.execute("INSERT OR IGNORE INTO character_revisions VALUES (?, ?, 2, ?, '[\"notes.save\"]')",
+                               ("11111111-1111-4111-8111-111111111112", characters[0][0], characters[0][3]))
+            connection.execute("UPDATE characters SET version = 2, updated_at = ? WHERE id = ? AND version = 1", (timestamp, characters[0][0]))
 
 
 def character_from(row) -> Character:

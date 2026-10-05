@@ -217,7 +217,7 @@ class CatalogTests(unittest.TestCase):
     def test_openapi_matches_implemented_operations_and_errors(self):
         schema = self.client.get("/openapi.json").json()
         operations = {(method.upper(), path) for path, methods in schema['paths'].items() for method in methods if method in {'get', 'post'}}
-        self.assertEqual(len(operations), 10)
+        self.assertEqual(len(operations), 13)
         self.assertIn(("POST", "/v1/conversations/{conversation_id}/runs"), operations)
         for path, methods in schema["paths"].items():
             if path == "/health":

@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Protocol
+from .tools import ToolCall, ToolRequest
 
 TERMINAL = frozenset({"completed", "failed", "cancelled"})
 
@@ -52,13 +53,15 @@ class ModelContext:
     character_name: str
     system_prompt: str
     messages: tuple[ModelMessage, ...]
+    allowed_tool_ids: tuple[str, ...] = ()
+    tool_results: tuple[ToolCall, ...] = ()
 
 
 class TextModel(Protocol):
     name: str
     is_simulated: bool
 
-    def stream(self, context: ModelContext) -> AsyncIterator[str]: ...
+    def stream(self, context: ModelContext) -> AsyncIterator[str | ToolRequest]: ...
 
 
 class ChatRepository(Protocol):

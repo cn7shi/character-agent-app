@@ -1,6 +1,6 @@
 # 两端存储与最小数据模型
 
-状态：阶段 3 已通过迁移建立 `users`、`characters`、`character_revisions`、`conversations`、`request_receipts`、`messages`、`runs` 与 `run_events`。工具表与 Room 尚未实现。本文中尚未落地的对象仍为设计约定。
+状态：已通过迁移建立 `users`、`characters`、`character_revisions`、`conversations`、`request_receipts`、`messages`、`runs`、`run_events`，阶段 5 新增 `tool_calls` 与 `notes`。Room、长期记忆与资源管理尚未实现；本文中尚未落地的对象仍为设计约定。
 
 ## 数据归属
 
@@ -10,6 +10,7 @@
 | 角色 | 已发布资料、人设版本与允许的能力 | 缓存可展示的角色资料 | 按标识和版本更新；私有提示词不下发 |
 | 会话与消息 | 账号内已确认记录 | 最近记录、发送状态与待发送消息 | 稳定消息标识与会话序号，重试去重 |
 | 在线任务与工具记录 | 执行状态、结果与事件 | 当前页面需要的状态快照 | 服务端负责执行；客户端不能把任务状态改成成功 |
+| 笔记 | 工具实际保存的内容与来源 | 计划缓存笔记列表和详情 | 服务端按用户隔离，可按来源会话筛选 |
 | 草稿 | 首版不保存 | 每个账号和会话的输入草稿 | 只在本机保存 |
 | 记忆 | 后续保存有明确用户和角色范围的记忆 | 只缓存用户可查看的必要内容 | 默认角色内隔离，跨角色共享另行设计 |
 | 主题与临时界面状态 | 首版不保存 | 简单设置存储或临时状态 | 不与聊天同步绑定 |
@@ -61,20 +62,33 @@
 
 客户端发送接口首版只接收纯文本，由后端转换为用户消息内容块。模型生成的台词不能作为工具成功的证据；保存笔记成功与否以工具执行记录为准。
 
-## 工具与记忆阶段再加入
+## 工具与笔记（已实现）
 
 | 对象 | 主要字段 | 边界 |
 | --- | --- | --- |
-| `tool_calls` | `id`、`run_id`、`user_id`、`tool_id`、`arguments`、`result`、`status`、`invocation_key` | 参数需校验，写操作按调用键防重复；外部结果不明确时先核对，不直接重试 |
-| `notes` | `id`、`user_id`、`source_run_id`、`source_tool_call_id`、`title`、`content` | 首个笔记工具的产物，同一次工具调用只创建一份笔记 |
+| `tool_calls` | `id`、`user_id`、`conversation_id`、`run_id`、`call_id`、`tool_id`、`arguments`、`request_hash`、`status`、`result`、`error_code`、`error_message`、`created_at` | `(run_id, call_id)` 唯一；原始请求指纹用于区分重试与冲突；状态为 `completed` 或 `failed` |
+| `notes` | `id`、`user_id`、`conversation_id`、`source_run_id`、`source_tool_call_id`、`title`、`content`、`created_at` | 调用记录与笔记用组合外键绑定用户、会话和任务，同一工具记录只能创建一份笔记 |
+
+`notes.save` 仅接受去除首尾空白后 1–100 字符的标题和 1–16000 字符的正文。用户与会话由已认证身份和任务确定，拒绝通过工具参数指定身份。笔记按 `(created_at, id)` 降序分页，游标绑定用户和会话筛选条件。
+
+执行前重新检查会话固定的人设版本权限。林舟版本 2 允许 `notes.save`，旧会话仍绑定版本 1；角色更新不会扩大已有会话的能力。
+
+本地笔记、工具成功记录与事件在一个短事务中保存，失败时一起回滚；能够记录失败时，另存安全失败结果。取消与写入串行化，先取消就不再写笔记，先保存则保留。相同调用键和内容返回已保存结果（包括失败）；同键不同内容报冲突。服务重启保留已完成工具产物，不自动重放写操作。
+
+当前工具没有跨网络中间状态。未来 MCP 调用需要独立设计运行中与结果不明状态，不能假定外部写入能随本地事务回滚。
+
+## 后续预留对象
+
+| 对象 | 主要字段 | 边界 |
+| --- | --- | --- |
 | `memories` | `id`、`user_id`、`character_id`、`conversation_id`、`source_message_id`、`content`、`created_at` | 首版限定角色范围，可进一步限定会话；原型世界观与用户个人记忆分开 |
 | `assets` | `id`、`kind`、`storage_key`、`mime_type`、`duration_ms` | 保存文件引用；元信息按资源类型选用 |
 
-这些是预留对象，本阶段不创建空表或推断复杂记忆算法。
+记忆与资源仍是预留对象，本阶段不创建空表或推断复杂记忆算法。
 
 ## 客户端数据对象
 
-Room 计划保存 `cached_characters`、`cached_conversations`、`cached_messages`、`cached_runs`、`outbox` 与 `drafts`。每条私有记录带账号范围；切换账号时不能显示上一账号的数据或继续发送上一账号的请求。
+Room 计划保存 `cached_characters`、`cached_conversations`、`cached_messages`、`cached_runs`、`cached_notes`、`outbox` 与 `drafts`。每条私有记录带账号范围；切换账号时不能显示上一账号的数据或继续发送上一账号的请求。
 
 `outbox` 至少记录本地消息 ID、目标会话、请求键、请求内容和重试状态。网络恢复后沿用原请求键提交，不生成新键。云端会话尚未创建时先保留草稿，首版不支持离线创建新会话后自动关联。
 
