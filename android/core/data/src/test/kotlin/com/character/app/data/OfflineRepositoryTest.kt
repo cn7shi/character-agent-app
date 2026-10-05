@@ -78,6 +78,80 @@ class OfflineRepositoryTest {
     @After fun close() { database.close(); context.deleteDatabase(name) }
     private fun reopen() { database.close(); database = Room.databaseBuilder(context, ClientDatabase::class.java, name).build() }
 
+    @Test fun profileSaveAndResetSurviveLostResponsesReopenAndIdentitySwitch() = runBlocking {
+        var saved = UserProfile()
+        var lose = true
+        val remote = object : BackendAdapter by backend {
+            override suspend fun profile() = saved
+            override suspend fun saveProfile(profile: UserProfile): UserProfile {
+                saved = profile.copy(version = profile.version + 1)
+                if (lose) { lose = false; throw RemoteFailure() }
+                return saved
+            }
+            override suspend fun resetProfile(version: Int) = saveProfile(UserProfile(version = version))
+        }
+        var repo = OfflineRepository(database, "a", remote)
+        val value = UserProfile("旅行者 ☕", "第一行\n第二行")
+        repo.refreshProfile()
+        try { repo.saveProfile(value); fail() } catch (_: BackendFailure) { }
+        reopen()
+        repo = OfflineRepository(database, "a", remote)
+        assertEquals(ProfileChange(value), repo.pendingProfile().first())
+        assertNull(OfflineRepository(database, "b", remote).pendingProfile().first())
+        assertNull(OfflineRepository(database, "b", remote).profile().first())
+        try { repo.saveProfile(value.copy(nickname = "不可覆盖")); fail() } catch (_: IllegalStateException) { }
+        repo.retryProfile()
+        assertEquals(value.copy(version = 1), repo.profile().first())
+        assertNull(repo.pendingProfile().first())
+        lose = true
+        try { repo.resetProfile(1); fail() } catch (_: BackendFailure) { }
+        reopen()
+        repo = OfflineRepository(database, "a", remote)
+        assertEquals(ProfileChange(UserProfile(version = 1), true), repo.pendingProfile().first())
+        repo.retryProfile()
+        assertEquals(UserProfile(version = 2), repo.profile().first())
+        assertNull(repo.pendingProfile().first())
+    }
+
+    @Test fun profileConflictRequiresExplicitReloadAndFailedReloadRetainsInput() = runBlocking {
+        var offline = false
+        val latest = UserProfile("其他设备修改", "", 2)
+        val remote = object : BackendAdapter by backend {
+            override suspend fun profile(): UserProfile { if (offline) throw RemoteFailure(); return latest }
+            override suspend fun saveProfile(profile: UserProfile): UserProfile = throw RemoteFailure(409)
+        }
+        val repo = OfflineRepository(database, "a", remote)
+        val input = UserProfile("我的修改", "", 1)
+        try { repo.saveProfile(input); fail() } catch (_: BackendFailure) { }
+        repo.refreshProfile()
+        assertEquals(ProfileChange(input), repo.pendingProfile().first())
+        offline = true
+        try { repo.reloadProfile(); fail() } catch (_: BackendFailure) { }
+        assertEquals(latest, repo.profile().first())
+        assertEquals(ProfileChange(input), repo.pendingProfile().first())
+        offline = false
+        assertEquals(latest, repo.reloadProfile())
+        assertNull(repo.pendingProfile().first())
+    }
+
+    @Test fun staleProfileResponsesCannotRegressTheCacheOrAcknowledgeBadWrites() = runBlocking {
+        var response = UserProfile("新资料", "", 4)
+        val remote = object : BackendAdapter by backend {
+            override suspend fun profile() = response
+            override suspend fun saveProfile(profile: UserProfile) = response
+        }
+        val repo = OfflineRepository(database, "a", remote)
+        repo.refreshProfile()
+        response = UserProfile("旧资料", "", 2)
+        repo.refreshProfile()
+        assertEquals(4, repo.profile().first()?.version)
+        response = UserProfile("不一致资料", "", 4)
+        try { repo.refreshProfile(); fail() } catch (e: BackendFailure) { assertEquals(FailureKind.PROTOCOL, e.kind) }
+        try { repo.saveProfile(UserProfile("我的修改", "", 4)); fail() } catch (e: BackendFailure) { assertEquals(FailureKind.PROTOCOL, e.kind) }
+        assertEquals("新资料", repo.profile().first()?.nickname)
+        assertNotNull(repo.pendingProfile().first())
+    }
+
     @Test fun characterWriteSurvivesLostResponseAndDatabaseReopen() = runBlocking {
         var accepted: CharacterDraft? = null
         var lose = true

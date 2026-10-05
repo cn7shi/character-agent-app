@@ -1,9 +1,9 @@
 # 客户端与服务端接口约定
 
-这里保存与 Android 界面和模型供应商无关的业务接口约定。已实现角色、会话、持久化任务、流式事件、工具记录与笔记查询；阶段 6C1 增加私有角色管理。
+这里保存与 Android 界面和模型供应商无关的业务接口约定。已实现角色、会话、持久化任务、流式事件、工具记录与笔记查询；阶段 6C1 增加私有角色管理，6C2 增加个人资料。
 
 - [API 与事件草案](api-v1.md)：请求、响应、错误、流式事件与恢复规则。
-- [生成的 OpenAPI](openapi-v1.json)：包含当前实际实现的 16 项操作，含私有角色创建、编辑和删除。
+- [生成的 OpenAPI](openapi-v1.json)：包含当前实际实现的 19 项操作，含私有角色管理和个人资料读取、保存、重置。
 - [创建执行请求示例](examples/create-run.request.json)。
 - [执行受理响应示例](examples/create-run.response.json)。
 - [消息更新事件示例](examples/message-updated.event.json)。

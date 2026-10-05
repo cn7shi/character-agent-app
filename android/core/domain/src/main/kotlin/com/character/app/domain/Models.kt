@@ -22,8 +22,19 @@ data class MessageDraft(val revision: String, val text: String)
 enum class DraftSaveState { LOADING, SAVING, SAVED, FAILED }
 data class Page<T>(val items: List<T>, val nextCursor: String?)
 
+data class UserProfile(val nickname: String = "", val bio: String = "", val version: Int = 0)
+/** The value carries the expected version, including for a reset. */
+data class ProfileChange(val value: UserProfile, val reset: Boolean = false)
+
 /** D18: screens depend on these business objects, never Room rows or transport JSON. */
 interface CharacterRepository {
+    fun profile(): Flow<UserProfile?>
+    fun pendingProfile(): Flow<ProfileChange?>
+    suspend fun refreshProfile()
+    suspend fun saveProfile(profile: UserProfile)
+    suspend fun resetProfile(version: Int)
+    suspend fun retryProfile()
+    suspend fun reloadProfile(): UserProfile
     fun pendingCharacter(): Flow<CharacterDraft?>
     suspend fun characterDefinition(id: String): CharacterDraft
     suspend fun saveCharacter(draft: CharacterDraft)
@@ -53,6 +64,9 @@ interface CharacterRepository {
 
 /** The backend protocol can change without changing the repository or presentation contracts. */
 interface BackendGateway {
+    suspend fun profile(): UserProfile = throw BackendFailure(FailureKind.UNSUPPORTED)
+    suspend fun saveProfile(profile: UserProfile): UserProfile = throw BackendFailure(FailureKind.UNSUPPORTED)
+    suspend fun resetProfile(version: Int): UserProfile = throw BackendFailure(FailureKind.UNSUPPORTED)
     suspend fun characterDefinition(id: String): CharacterDraft = throw BackendFailure(FailureKind.UNSUPPORTED)
     suspend fun saveCharacter(draft: CharacterDraft): CharacterDraft = throw BackendFailure(FailureKind.UNSUPPORTED)
     suspend fun deleteCharacter(id: String): Unit = throw BackendFailure(FailureKind.UNSUPPORTED)
@@ -68,6 +82,7 @@ interface BackendGateway {
 
 /** Protocol-neutral boundary. Unsupported capabilities must be declared, not silently emulated. */
 interface BackendAdapter : BackendGateway, AutoCloseable {
+    val supportsProfile: Boolean get() = false
     val supportsCharacterManagement: Boolean get() = false
     val supportsEvents: Boolean
     fun events(runId: String, afterSequence: Long): Flow<RunEvent>

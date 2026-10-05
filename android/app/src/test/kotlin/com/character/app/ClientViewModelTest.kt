@@ -26,6 +26,19 @@ private class TestConnections : ConnectionStore {
 }
 
 private class DelayedBackend : BackendAdapter {
+    override val supportsProfile = true
+    var userProfile = UserProfile()
+    var loseProfileResponse = false
+    override suspend fun profile(): UserProfile {
+        if (offline) throw BackendFailure(FailureKind.CONNECTION)
+        return userProfile
+    }
+    override suspend fun saveProfile(profile: UserProfile): UserProfile {
+        userProfile = profile.copy(version = profile.version + 1)
+        if (loseProfileResponse) { loseProfileResponse = false; throw BackendFailure(FailureKind.CONNECTION) }
+        return userProfile
+    }
+    override suspend fun resetProfile(version: Int) = saveProfile(UserProfile(version = version))
     val character = Character("character", "测试角色", "", 1)
     val conversation = Conversation("conversation", character.id, "测试会话", "now")
     val submitted = CompletableDeferred<Unit>()
@@ -103,6 +116,46 @@ class ClientViewModelTest {
     }
 
     private suspend fun saved() { withTimeout(5000) { model.state.first { it.draftState == DraftSaveState.SAVED } } }
+
+    @Test fun profileSaveFailureIsRetriedAfterRecreationWithoutLosingInput() = runBlocking(main) {
+        model.tab("我的")
+        withTimeout(5000) { model.state.first { !it.busy && it.userProfile != null } }
+        model.editProfile()
+        val value = UserProfile("夜航", "我的简介")
+        model.changeProfile(value)
+        backend.loseProfileResponse = true
+        model.saveProfile()
+        withTimeout(5000) { model.state.first { !it.busy && it.pendingProfileChange != null } }
+        assertEquals(value, model.state.value.profileEditor)
+        model.changeProfile(value.copy(nickname = "不能覆盖"))
+        assertEquals(value, model.state.value.profileEditor)
+        recreate()
+        withTimeout(5000) { model.state.first { it.pendingProfileChange != null } }
+        model.retryProfile()
+        withTimeout(5000) { model.state.first { !it.busy && it.pendingProfileChange == null && it.userProfile?.version == 1 } }
+        assertEquals("夜航", model.state.value.userProfile?.nickname)
+        model.resetProfile()
+        withTimeout(5000) { model.state.first { !it.busy && it.userProfile?.version == 2 } }
+        assertEquals("", model.state.value.userProfile?.nickname)
+        assertTrue(model.state.value.characters.isNotEmpty())
+    }
+
+    @Test fun switchingIdentityHidesCachedPersonalProfileAndEditor() = runBlocking(main) {
+        val original = connections.read()!!
+        backend.userProfile = UserProfile("身份 A 资料", "", 1)
+        model.tab("我的")
+        withTimeout(5000) { model.state.first { !it.busy && it.userProfile != null } }
+        model.editProfile()
+        model.connect(original.first, UUID.randomUUID().toString())
+        assertNull(model.state.value.userProfile)
+        assertNull(model.state.value.profileEditor)
+        assertNull(model.state.value.pendingProfileChange)
+        ready()
+        model.connect(original.first, original.second)
+        ready()
+        withTimeout(5000) { model.state.first { it.userProfile != null } }
+        assertEquals("身份 A 资料", model.state.value.userProfile?.nickname)
+    }
 
     private suspend fun recreate() {
         store.clear()

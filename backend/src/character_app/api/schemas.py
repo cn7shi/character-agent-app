@@ -43,6 +43,28 @@ class DeleteCharacterResponse(BaseModel):
     deleted: Literal[True] = True
 
 
+class ProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    nickname: str
+    bio: str
+    version: int
+
+
+class ResetProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=0, strict=True)
+
+
+class SaveProfileRequest(ResetProfileRequest):
+    nickname: str = Field(min_length=1, max_length=50)
+    bio: str = Field(max_length=500)
+
+    @field_validator("nickname", "bio", mode="before")
+    @classmethod
+    def normalize_text(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
 class ConversationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID

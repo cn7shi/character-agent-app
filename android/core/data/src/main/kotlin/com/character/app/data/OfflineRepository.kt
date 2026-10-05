@@ -15,7 +15,7 @@ fun userMessage(error: Throwable): String = when (error) {
     is BackendFailure -> when (error.kind) {
         FailureKind.AUTHENTICATION, FailureKind.FORBIDDEN -> "连接凭证无效，请在设置中检查。"
         FailureKind.NOT_FOUND -> "记录不存在或不属于当前连接。"
-        FailureKind.CONFLICT -> "会话正忙或请求冲突，请刷新后再试。"
+        FailureKind.CONFLICT -> "内容已更新或操作冲突，请读取最新内容后再试。"
         FailureKind.INVALID_REQUEST -> "内容不符合要求，请检查后重新发送。"
         FailureKind.THROTTLED -> "请求较多，请稍后重试。"
         FailureKind.PROTOCOL, FailureKind.UNSUPPORTED -> "服务返回了无法识别的数据，请检查服务版本。"
@@ -29,6 +29,14 @@ fun userMessage(error: Throwable): String = when (error) {
 class OfflineRepository(private val db: ClientDatabase, private val scope: String, private val remote: BackendAdapter) : CharacterRepository {
     private val dao = db.dao()
     private val gate = Mutex()
+    private val profiles = ProfileCache(db, scope, remote)
+    override fun profile() = profiles.observe()
+    override fun pendingProfile() = profiles.observePending()
+    override suspend fun refreshProfile() = profiles.refresh()
+    override suspend fun saveProfile(profile: UserProfile) = profiles.save(profile)
+    override suspend fun resetProfile(version: Int) = profiles.reset(version)
+    override suspend fun retryProfile() = profiles.retry()
+    override suspend fun reloadProfile() = profiles.reload()
     private fun <T> watch(kind: String, read: (JSONObject) -> T) = dao.observe(scope, kind).map { rows -> rows.map { read(JSONObject(it.payload)) } }
     override fun pendingCharacter() = watch("character_write", JsonCodec::characterDraft).map { it.singleOrNull() }
     override suspend fun characterDefinition(id: String) = remote.characterDefinition(id)

@@ -16,6 +16,8 @@ from character_app.adapters.storage.service_lock import ServiceLock
 from character_app.adapters.models.factory import configured_model
 from character_app.adapters.models.logging_guard import redact_model_secret
 from character_app.application.chat import ChatService
+from character_app.application.profiles import ProfileService
+from character_app.adapters.storage.profiles import SqliteProfileStore
 from character_app.application.agent import NotesService, ToolRegistry
 from character_app.domain.chat import TextModel
 from character_app.api.auth import DevelopmentIdentityResolver, RejectingIdentityResolver
@@ -54,6 +56,7 @@ def create_app(settings: Settings | None = None, *, model: TextModel | None = No
                 database.seed([principal for principal, _ in users])
             app.state.identities = DevelopmentIdentityResolver(users) if settings.dev_auth else RejectingIdentityResolver()
             app.state.catalog = CatalogService(SqliteCatalogRepository(database), CursorCodec(key))
+            app.state.profiles = ProfileService(SqliteProfileStore(database))
             tool_store = SqliteToolStore(database)
             registry = ToolRegistry(tool_store, [SaveNoteTool(tool_store)])
             app.state.notes = NotesService(tool_store, CursorCodec(key))
@@ -72,7 +75,7 @@ def create_app(settings: Settings | None = None, *, model: TextModel | None = No
                             await service.close()
 
     app = FastAPI(
-        title="Character App API", version="0.6.0", lifespan=lifespan,
+        title="Character App API", version="0.6.1", lifespan=lifespan,
         description="Local development chat with fixed demo replies, bounded tool execution and persisted notes. Optional compatible text provider; live model tool calling is not integrated.",
         docs_url="/docs" if settings.dev_auth else None,
         redoc_url=None,

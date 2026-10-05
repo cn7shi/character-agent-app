@@ -1,12 +1,13 @@
 # 两端存储与最小数据模型
 
-状态：服务端已建立 `users`、`characters`、`character_revisions`、`conversations`、`request_receipts`、`messages`、`runs`、`run_events`、`tool_calls` 与 `notes`。Android Room 已有快照、待发送、会话创建请求及本地草稿表，当前 schema 2。长期记忆、资源管理与完整同步尚未实现。
+状态：服务端已建立 `users`、`user_profiles`、`characters`、`character_revisions`、`conversations`、`request_receipts`、`messages`、`runs`、`run_events`、`tool_calls` 与 `notes`。Android Room 已有快照、待发送、会话创建请求及本地草稿表，当前 schema 2。长期记忆、资源管理与完整同步尚未实现。
 
 ## 数据归属
 
 | 数据 | 服务端 | 手机本地 | 对齐原则 |
 | --- | --- | --- | --- |
 | 用户与身份 | 用户记录与认证关联 | 当前账号必要资料 | 服务端解析身份，不信任请求体传入的用户编号 |
+| 个人资料 | 每用户一份昵称、简介、版本 | 当前资料缓存及待确认保存/重置 | 与身份分开，版本递增，重置保留版本与其他业务数据 |
 | 角色 | 已发布资料、人设版本、所有者与允许的能力 | 展示资料；所有者编辑内容及已提交待确认保存 | 按标识和版本更新；私有人设仅通过所有者编辑接口返回 |
 | 会话与消息 | 账号内已确认记录 | 最近记录、发送状态与待发送消息 | 稳定消息标识与会话序号，重试去重 |
 | 在线任务与工具记录 | 执行状态、结果与事件 | 当前页面需要的状态快照 | 服务端负责执行；客户端不能把任务状态改成成功 |
@@ -33,6 +34,7 @@
 | 对象 | 主要字段 | 约束与用途 |
 | --- | --- | --- |
 | `users` | `id`、`display_name`、`created_at` | 先提供明确的用户范围，真实账号认证后续接入 |
+| `user_profiles` | `user_id`、`nickname`、`bio`、`version`、`updated_at` | user_id 主键外键，迁移 005 新增；无行表示空资料版本 0，保存与重置递增，认证信息不随资料修改 |
 | `characters` | `id`、`name`、`summary`、`avatar_asset_id`、`background_asset_id`、`version`、`created_at`、`updated_at`、`owner_id`、`deleted_at` | owner_id 为空是内置角色，否则仅所有者可见；删除标记阻止新会话但保留历史关联 |
 | `character_revisions` | `id`、`character_id`、`version`、`name`、`system_prompt`、`allowed_tool_ids` | 不可变的人设版本，包含当时名称；同一角色版本号唯一 |
 | `conversations` | `id`、`user_id`、`character_id`、`character_revision_id`、`title`、`version`、`created_at`、`updated_at` | 首版每个会话固定一个角色和设定版本；同一用户可与同一角色开启多个会话 |
@@ -91,6 +93,8 @@
 Room 阶段 6A 实际保存 `snapshots`、`outbox` 与 `conversation_requests`。`snapshots` 以 `(scope, kind, id)` 作主键，保存领域快照的内部 JSON 与排序键；kind 区分角色、会话、消息、任务和笔记。领域对象、HTTP 响应与 Room 行通过 data 模块转换。当前不做本地全文检索，后续按需要拆分专用表，导出的 schema 用于迁移。
 
 阶段 6C1 在 snapshots 新增内部 kind `character_write`，每个 scope 至多一份待确认角色保存，包含固定角色 ID、基准版本与完整内容。请求成功时与角色快照一同事务提交并清除意图；失败保留，重新打开后可重试。未点击保存的表单仍是 ViewModel 状态。列表只有完整分页成功才替换角色缓存，避免离线清空；删除不清除旧聊天。Room 结构仍为 schema 2。
+
+阶段 6C2 增加 `profile`（id 为 me）与 `profile_write`（id 为 pending）快照。后者包含昵称、简介、基准版本及是否重置，请求前先保存；未知结果只能按原操作重试或明确读取最新资料。成功写入与清除待确认意图同事务进行；普通刷新不丢弃意图，失败保留缓存，迟到的低版本响应不回退缓存。认证凭证不保存在这些快照中，Room schema 仍为 2。
 
 每条记录都有连接范围 `scope`，当前由服务地址与访问凭证指纹产生，原始凭证不进 Room。切换连接后界面与观察任务一起切换，不能显示上一范围的数据。正式认证后使用服务端验证的稳定账号标识。
 

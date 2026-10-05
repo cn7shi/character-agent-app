@@ -4,6 +4,10 @@ import com.character.app.domain.*
 import org.json.JSONObject
 
 internal object JsonCodec {
+    fun profile(o: JSONObject) = UserProfile(o.getString("nickname"), o.getString("bio"), o.getInt("version"))
+    fun encode(v: UserProfile) = JSONObject().put("nickname", v.nickname).put("bio", v.bio).put("version", v.version)
+    fun profileChange(o: JSONObject) = ProfileChange(profile(o.getJSONObject("value")), o.getBoolean("reset"))
+    fun encode(v: ProfileChange) = JSONObject().put("value", encode(v.value)).put("reset", v.reset)
     fun character(o: JSONObject) = Character(o.getString("id"), o.getString("name"), o.getString("summary"), o.getInt("version"), o.optBoolean("editable", false))
     fun characterDraft(o: JSONObject) = CharacterDraft(o.getString("id"), o.getString("name"), o.getString("summary"), o.getString("system_prompt"), o.getBoolean("notes_enabled"), o.getInt("version"))
     fun encode(v: CharacterDraft) = JSONObject().put("id", v.id).put("name", v.name).put("summary", v.summary)

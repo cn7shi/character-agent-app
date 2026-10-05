@@ -28,6 +28,7 @@ def main():
     scenarios = parser.add_mutually_exclusive_group()
     scenarios.add_argument("--extended", action="store_true", help="Also verify foreground kill, partial cancellation and a real schema-1 APK upgrade")
     scenarios.add_argument("--characters", action="store_true", help="Run the character create/edit/delete and preserved-chat device scenario")
+    scenarios.add_argument("--profiles", action="store_true", help="Run profile edit/reset, restart and identity-isolation checks")
     args = parser.parse_args()
     adb_path = args.sdk / "platform-tools" / ("adb.exe" if os.name == "nt" else "adb")
     if not adb_path.is_file():
@@ -102,7 +103,7 @@ def main():
         "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
         "test_apk_sha256": hashlib.sha256(test_apk.read_bytes()).hexdigest(),
         "backend_provider": "mock", "network_fault": "stop isolated backend process, then restart same database",
-        "scenario": "characters" if args.characters else "extended" if args.extended else "base",
+        "scenario": "profiles" if args.profiles else "characters" if args.characters else "extended" if args.extended else "base",
         "checkpoints": [], "passed": False,
     }
 
@@ -179,6 +180,26 @@ def main():
                 secrets.extend(user["token"] for user in users)
                 config = {"url": base + "/", "tokenA": secrets[0], "tokenB": secrets[1]}
                 write_private("device-check.json", json.dumps(config).encode())
+                if args.profiles:
+                    report["network_fault"] = "not injected in this scenario"
+                    checkpoint("createCharacterAndChat")
+                    before = {path: request(base, path, token=secrets[0])[1] for path in
+                              ("/v1/characters", "/v1/conversations", "/v1/notes")}
+                    if len(before["/v1/notes"]["items"]) != 1 or not any(c["editable"] for c in before["/v1/characters"]["items"]):
+                        raise RuntimeError("Profile preservation fixture was not created")
+                    checkpoint("savePersonalProfile", ["17-profile-editor", "18-profile-saved"])
+                    checkpoint("editProfileSwitchIdentityAndReset", ["19-profile-updated", "20-profile-reset"])
+                    checkpoint("verifyProfileResetAfterRestart")
+                    profile_a = request(base, "/v1/me/profile", token=secrets[0])[1]
+                    profile_b = request(base, "/v1/me/profile", token=secrets[1])[1]
+                    if profile_a != {"nickname": "", "bio": "", "version": 3} or profile_b != {"nickname": "另一位旅人", "bio": "身份 B 简介", "version": 1}:
+                        raise RuntimeError("Unexpected isolated profile state")
+                    for path, expected in before.items():
+                        if request(base, path, token=secrets[0])[1] != expected:
+                            raise RuntimeError("Profile reset changed unrelated data")
+                    report["profile_management"] = "saved; reopened; edited; identity isolated; reset cancelled then confirmed; reopened empty; roles, conversations and notes unchanged"
+                    report["passed"] = True
+                    return
                 if args.characters:
                     report["network_fault"] = "not injected in this scenario"
                     checkpoint("createCharacterAndChat", ["13-character-editor", "14-created-character"])

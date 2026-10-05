@@ -20,6 +20,15 @@ object BackendFactory {
 
 class HttpBackend(private val transport: HttpRequests, private val eventTransport: HttpEvents? = null,
                   private val release: () -> Unit = {}) : BackendAdapter {
+    override val supportsProfile = true
+    override suspend fun profile() = decode { JsonCodec.profile(JSONObject(transport.request("GET", "/v1/me/profile"))) }
+    override suspend fun saveProfile(profile: UserProfile) = decode {
+        val body = JsonCodec.encode(profile).apply { remove("version"); put("expected_version", profile.version) }
+        JsonCodec.profile(JSONObject(transport.request("PUT", "/v1/me/profile", body.toString())))
+    }
+    override suspend fun resetProfile(version: Int) = decode {
+        JsonCodec.profile(JSONObject(transport.request("POST", "/v1/me/profile/reset", JSONObject().put("expected_version", version).toString())))
+    }
     override val supportsCharacterManagement = true
     override suspend fun characterDefinition(id: String) = decode { JsonCodec.characterDraft(JSONObject(transport.request("GET", "/v1/characters/$id/definition"))) }
     override suspend fun saveCharacter(draft: CharacterDraft) = decode {

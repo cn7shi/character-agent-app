@@ -21,6 +21,8 @@ import com.character.app.characters.CharacterEditorScreen
 import com.character.app.chat.ChatScreen
 import com.character.app.designsystem.CharacterTheme
 import com.character.app.notes.NotesScreen
+import com.character.app.profile.ProfileScreen
+import com.character.app.profile.ProfileEditorScreen
 import com.character.app.settings.SettingsScreen
 
 class MainActivity : ComponentActivity() {
@@ -41,6 +43,7 @@ class MainActivity : ComponentActivity() {
                 }
                 BackHandler(state.selected != null) { model.back() }
                 BackHandler(state.characterEditor != null) { model.closeCharacterEditor() }
+                BackHandler(state.profileEditor != null) { model.closeProfileEditor() }
                 Scaffold(
                     topBar = {
                         Column(Modifier.statusBarsPadding().fillMaxWidth()) {
@@ -61,8 +64,8 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     bottomBar = {
-                        if (state.selected == null && state.characterEditor == null) NavigationBar {
-                            listOf("角色" to "◉", "笔记" to "▤", "设置" to "⚙").forEach { (tab, icon) ->
+                        if (state.selected == null && state.characterEditor == null && state.profileEditor == null) NavigationBar {
+                            listOf("角色" to "◉", "笔记" to "▤", "我的" to "◎", "设置" to "⚙").forEach { (tab, icon) ->
                                 NavigationBarItem(selected = state.tab == tab, enabled = state.connected || tab == "设置",
                                     onClick = { model.tab(tab) }, icon = { Text(icon) }, label = { Text(tab) })
                             }
@@ -70,7 +73,9 @@ class MainActivity : ComponentActivity() {
                     }
                 ) { padding ->
                     Box(Modifier.fillMaxSize().padding(padding)) {
-                        if (state.characterEditor != null) CharacterEditorScreen(checkNotNull(state.characterEditor), state.busy, state.pendingCharacter != null,
+                        if (state.profileEditor != null) ProfileEditorScreen(checkNotNull(state.profileEditor), state.pendingProfileChange, state.busy,
+                            model::changeProfile, model::saveProfile, model::retryProfile, model::reloadProfile, model::closeProfileEditor)
+                        else if (state.characterEditor != null) CharacterEditorScreen(checkNotNull(state.characterEditor), state.busy, state.pendingCharacter != null,
                             model::changeCharacter, model::saveCharacter, model::reloadCharacter, model::closeCharacterEditor)
                         else if (state.selected != null) ChatScreen(state.messages, state.pending, state.runs, state.draft, state.busy, state.draftState,
                             model::draft, model::send, model::cancel, model::retry, model::dismiss, model::retryDraftSave)
@@ -78,6 +83,8 @@ class MainActivity : ComponentActivity() {
                             "角色" -> CharactersScreen(state.characters, state.conversations, state.busy, model::create, model::open, model::refreshHome,
                                 state.canManageCharacters, state.pendingCharacter != null, model::newCharacter, model::editCharacter, model::deleteCharacter)
                             "笔记" -> NotesScreen(state.notes, state.busy, model::refreshNotes)
+                            "我的" -> ProfileScreen(state.userProfile, state.pendingProfileChange, state.canManageProfile, state.busy,
+                                model::refreshProfile, model::editProfile, model::resetProfile, model::retryProfile, model::reloadProfile)
                             else -> SettingsScreen(state.url, state.connected, state.dark, state.busy, state.polling, model::connect, model::disconnect, model::theme, model::mode)
                         }
                     }

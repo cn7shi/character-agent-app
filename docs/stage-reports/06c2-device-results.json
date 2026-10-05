@@ -1,0 +1,42 @@
+{
+  "started_at": "20261005T154454Z",
+  "serial": "emulator-5580",
+  "package": "com.character.app.devicecheck",
+  "android": "15",
+  "api": "35",
+  "model": "Android SDK built for x86_64",
+  "display": "Physical size: 1080x2340",
+  "git_base": "72b0888c4ca906596219f924a6824fa192236fb1",
+  "working_tree_changed": true,
+  "apk_sha256": "f122a3496c22e97027b12d830bd2d298e6b744234986154ddd0da414170b0a98",
+  "test_apk_sha256": "e005af80c1f546e7a70ae93032a6876838b7e23ffddc1e39bdfcafb61409147b",
+  "backend_provider": "mock",
+  "network_fault": "not injected in this scenario",
+  "scenario": "profiles",
+  "checkpoints": [
+    {
+      "name": "createCharacterAndChat",
+      "passed": true,
+      "seconds": 17.62
+    },
+    {
+      "name": "savePersonalProfile",
+      "passed": true,
+      "seconds": 10.56
+    },
+    {
+      "name": "editProfileSwitchIdentityAndReset",
+      "passed": true,
+      "seconds": 16.12
+    },
+    {
+      "name": "verifyProfileResetAfterRestart",
+      "passed": true,
+      "seconds": 7.83
+    }
+  ],
+  "passed": true,
+  "profile_management": "saved; reopened; edited; identity isolated; reset cancelled then confirmed; reopened empty; roles, conversations and notes unchanged",
+  "cleanup_complete": true,
+  "finished_at": "2026-10-05T15:45:50.913386+00:00"
+}

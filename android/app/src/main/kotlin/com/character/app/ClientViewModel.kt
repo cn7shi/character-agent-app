@@ -17,6 +17,8 @@ data class ClientState(
     val notes: List<Note> = emptyList(), val selected: Conversation? = null,
     val canManageCharacters: Boolean = false, val characterEditor: CharacterDraft? = null,
     val pendingCharacter: CharacterDraft? = null,
+    val canManageProfile: Boolean = false, val userProfile: UserProfile? = null,
+    val profileEditor: UserProfile? = null, val pendingProfileChange: ProfileChange? = null,
     val messages: List<Message> = emptyList(), val pending: List<PendingMessage> = emptyList(),
     val runs: List<Run> = emptyList(), val draft: String = "", val draftState: DraftSaveState = DraftSaveState.LOADING
 )
@@ -74,7 +76,12 @@ class ClientViewModel internal constructor(
         val repo = OfflineRepository(database, connection.scope, backend)
         repository = repo
         mutable.value = ClientState(connected = true, url = connection.baseUrl, tab = "角色", dark = vault.dark, polling = vault.mode == ConnectionMode.POLLING,
-            canManageCharacters = backend.supportsCharacterManagement)
+            canManageCharacters = backend.supportsCharacterManagement, canManageProfile = backend.supportsProfile)
+        session.launch {
+            combine(repo.profile(), repo.pendingProfile()) { profile, pending -> profile to pending }.collect { (profile, pending) ->
+                if (repository === repo) mutable.update { it.copy(userProfile = profile, pendingProfileChange = pending) }
+            }
+        }
         session.launch { repo.pendingCharacter().collect { pending ->
             if (repository === repo) mutable.update { it.copy(pendingCharacter = pending) }
         } }
@@ -95,7 +102,40 @@ class ClientViewModel internal constructor(
         mutable.value = ClientState(dark = vault.dark, polling = vault.mode == ConnectionMode.POLLING)
     }
     fun theme(dark: Boolean) { vault.dark = dark; mutable.update { it.copy(dark = dark) } }
-    fun tab(tab: String) { back(); mutable.update { it.copy(tab = tab) }; if (tab == "笔记") refreshNotes() }
+    fun tab(tab: String) {
+        back(); mutable.update { it.copy(tab = tab) }
+        if (tab == "笔记") refreshNotes()
+        if (tab == "我的" && state.value.canManageProfile) refreshProfile()
+    }
+    fun refreshProfile() = action { refreshProfile() }
+    fun editProfile() {
+        if (!state.value.busy && state.value.pendingProfileChange == null)
+            mutable.update { it.copy(profileEditor = it.userProfile) }
+    }
+    fun changeProfile(profile: UserProfile) {
+        if (!state.value.busy && state.value.pendingProfileChange == null && state.value.profileEditor?.version == profile.version)
+            mutable.update { it.copy(profileEditor = profile) }
+    }
+    fun closeProfileEditor() { if (!state.value.busy) mutable.update { it.copy(profileEditor = null, error = null) } }
+    fun saveProfile() {
+        val profile = state.value.profileEditor ?: return
+        action {
+            saveProfile(profile)
+            if (repository === this) mutable.update { it.copy(profileEditor = null) }
+        }
+    }
+    fun retryProfile() = action {
+        retryProfile()
+        if (repository === this) mutable.update { it.copy(profileEditor = null) }
+    }
+    fun reloadProfile() = action {
+        reloadProfile()
+        if (repository === this) mutable.update { it.copy(profileEditor = null) }
+    }
+    fun resetProfile() {
+        val profile = state.value.userProfile ?: return
+        action { resetProfile(profile.version) }
+    }
     fun clearError() { mutable.update { it.copy(error = null) } }
     fun foreground(value: Boolean) { foreground.value = value }
     fun mode(polling: Boolean) {

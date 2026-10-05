@@ -7,7 +7,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "0.6.0-dev"
+        versionName = "0.6.1-dev"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     // D27: device checks have their own sandbox; reruns never clear the user's development app.
@@ -37,6 +37,7 @@ dependencies {
     implementation(project(":feature:chat"))
     implementation(project(":feature:notes"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:profile"))
     implementation(platform("androidx.compose:compose-bom:2026.02.01"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.12.4")

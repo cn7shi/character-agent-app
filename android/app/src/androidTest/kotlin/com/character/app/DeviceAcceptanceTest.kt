@@ -103,6 +103,8 @@ class DeviceAcceptanceTest {
     private fun completed() { waitFor(hasText("已完成")); waitFor(hasText("发送") and isEnabled().not()) }
     private fun screenshot(name: String) {
         ui.waitForIdle()
+        // Compose idleness alone does not wait for Android's dialog/window exit animation.
+        instrumentation.uiAutomation.waitForIdle(500, 5_000)
         // Never capture settings: the password editor's semantics can contain a credential.
         check(ui.onAllNodes(hasText("开发访问凭证")).fetchSemanticsNodes().isEmpty())
         val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
@@ -341,6 +343,69 @@ class DeviceAcceptanceTest {
 
     private fun characterField(label: String, text: String) {
         ui.onNode(hasSetTextAction() and hasText(label)).performScrollTo().performTextReplacement(text)
+    }
+
+    private fun fillProfile(nickname: String, bio: String) {
+        click("编辑资料")
+        waitFor(hasText("编辑个人资料"))
+        characterField("昵称", nickname)
+        characterField("个人简介", bio)
+        ui.onNode(hasText("保存资料") and hasClickAction()).performScrollTo()
+        click("保存资料")
+        waitFor(hasText(nickname) and hasSetTextAction().not())
+    }
+
+    @Test fun savePersonalProfile() {
+        waitFor(hasText("遇见角色"))
+        click("我的")
+        waitFor(hasText("未设置昵称"))
+        click("编辑资料")
+        waitFor(hasText("编辑个人资料"))
+        ui.onNode(hasText("保存资料") and hasClickAction()).assertIsNotEnabled()
+        characterField("昵称", "夜航旅人 ☕")
+        characterField("个人简介", "喜欢故事与旅行\n也喜欢安静的夜晚")
+        screenshot("17-profile-editor")
+        ui.onNode(hasText("保存资料") and hasClickAction()).performScrollTo()
+        click("保存资料")
+        waitFor(hasText("夜航旅人 ☕") and hasSetTextAction().not())
+        screenshot("18-profile-saved")
+    }
+
+    @Test fun editProfileSwitchIdentityAndReset() {
+        waitFor(hasText("遇见角色"))
+        click("我的")
+        waitFor(hasText("夜航旅人 ☕"))
+        waitFor(hasText("喜欢故事与旅行\n也喜欢安静的夜晚"))
+        fillProfile("晨光旅人", "修改后的个人简介")
+        screenshot("19-profile-updated")
+        click("设置")
+        connect(config.getString("tokenB"), existing = true)
+        click("我的")
+        waitFor(hasText("未设置昵称"))
+        ui.onAllNodes(hasText("晨光旅人")).assertCountEquals(0)
+        fillProfile("另一位旅人", "身份 B 简介")
+        click("设置")
+        connect(config.getString("tokenA"), existing = true)
+        click("我的")
+        waitFor(hasText("晨光旅人"))
+        click("重置资料")
+        click("取消")
+        waitFor(hasText("晨光旅人"))
+        click("重置资料")
+        click("确认重置")
+        waitFor(hasText("未设置昵称"))
+        screenshot("20-profile-reset")
+    }
+
+    @Test fun verifyProfileResetAfterRestart() {
+        waitFor(hasText("设备自建 · 晚风"))
+        click("我的")
+        waitFor(hasText("未设置昵称"))
+        click("笔记")
+        waitFor(hasText("自建角色笔记"))
+        click("角色")
+        openChat()
+        waitFor(hasText("【模拟回复】已保存笔记《自建角色笔记》，可以在笔记列表查看。"))
     }
 
     @Test fun createCharacterAndChat() {

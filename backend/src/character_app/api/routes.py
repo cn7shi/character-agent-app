@@ -12,6 +12,7 @@ from .schemas import CharacterResponse, ConversationResponse, CreateConversation
 from .schemas import CreateRunRequest, RunResponse
 from .schemas import NoteResponse, ToolCallList
 from .schemas import CharacterDefinitionResponse, SaveCharacterRequest, DeleteCharacterResponse
+from .schemas import ProfileResponse, SaveProfileRequest, ResetProfileRequest
 
 router = APIRouter(prefix="/v1", responses={
     code: {"model": ErrorResponse} for code in (401, 403, 404, 422, 500)
@@ -19,6 +20,23 @@ router = APIRouter(prefix="/v1", responses={
 User = Annotated[Principal, Depends(current_user)]
 Limit = Annotated[int, Query(ge=1, le=100)]
 Cursor = Annotated[str | None, Query(min_length=1, max_length=2048)]
+
+
+@router.get("/me/profile", response_model=ProfileResponse, tags=["Profile"])
+def profile(request: Request, user: User):
+    return request.app.state.profiles.get(user.id)
+
+
+@router.put("/me/profile", response_model=ProfileResponse,
+            responses={409: {"model": ErrorResponse}}, tags=["Profile"])
+def save_profile(payload: SaveProfileRequest, request: Request, user: User):
+    return request.app.state.profiles.save(user.id, **payload.model_dump())
+
+
+@router.post("/me/profile/reset", response_model=ProfileResponse,
+             responses={409: {"model": ErrorResponse}}, tags=["Profile"])
+def reset_profile(payload: ResetProfileRequest, request: Request, user: User):
+    return request.app.state.profiles.reset(user.id, payload.expected_version)
 
 
 @router.get("/characters", response_model=Page[CharacterResponse], tags=["Characters"])

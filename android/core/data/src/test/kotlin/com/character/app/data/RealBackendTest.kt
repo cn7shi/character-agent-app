@@ -41,6 +41,22 @@ class RealBackendTest {
             }
         }
     }
+    @Test fun profileSaveResetAndReplayWorkThroughBothRealHttpModes() = runBlocking {
+        for (mode in ConnectionMode.entries) BackendFactory.connect(connection(), mode).use { api ->
+            assertTrue(api.supportsProfile)
+            val before = api.profile()
+            val input = before.copy(nickname = "原生资料 ☕", bio = "第一行\n第二行")
+            val saved = api.saveProfile(input)
+            assertEquals(input.copy(version = before.version + 1), saved)
+            assertEquals(saved, api.saveProfile(input))
+            assertEquals(saved, api.profile())
+            val reset = api.resetProfile(saved.version)
+            assertEquals(UserProfile(version = saved.version + 1), reset)
+            assertEquals(reset, api.resetProfile(saved.version))
+            try { api.saveProfile(input); fail() }
+            catch (error: BackendFailure) { assertEquals(FailureKind.CONFLICT, error.kind) }
+        }
+    }
     @Test fun characterManagementWorksThroughBothRealHttpModes() = runBlocking {
         for (mode in ConnectionMode.entries) BackendFactory.connect(connection(), mode).use { api ->
             assertTrue(api.supportsCharacterManagement)

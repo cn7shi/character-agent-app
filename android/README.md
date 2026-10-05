@@ -31,7 +31,9 @@
 
 角色页点“创建角色”，填写名称（1–100 字）、简介（0–500 字）和人设（1–8000 字），可开启“允许保存笔记”。保存后卡片显示“我的角色 · 仅自己可见”，可开聊、编辑、删除。删除有确认并保留旧对话；旧对话使用创建时的人设与能力，改动用于新对话。内置角色不可修改。固定模拟回复不会因为填写了人设就变成真实人设化 AI。
 
-角色保存失败后显示“继续确认角色保存”，原 ID、版本和内容已经留在 Room，重开后可重试。待确认内容不能直接修改；已有角色可明确放弃改动、重新读取服务端版本。点击保存之前的表单不提供跨进程恢复。头像与背景上传、公开分享、个人资料管理尚未完成。
+角色保存失败后显示“继续确认角色保存”，原 ID、版本和内容已经留在 Room，重开后可重试。待确认内容不能直接修改；已有角色可明确放弃改动、重新读取服务端版本。点击保存之前的表单不提供跨进程恢复。头像与背景上传、公开分享尚未完成。
+
+“我的”页面支持昵称、简介的查看、首次保存、修改与确认重置。内容真实保存到后端，Room 按连接缓存，切换身份不会串资料。未知写入结果留在本机，可重试原操作或读取最新资料；普通刷新不丢弃待确认内容。重置只清空两项资料，保留账号、角色、聊天和笔记。表单点击保存前不提供跨进程恢复，正式账号注册/登录/注销与头像上传仍未实现。
 
 - 角色列表、会话、已获取消息和笔记写入 Room，离线可查看。列表会读完后端分页并按 ID 合并；当前面向小规模开发数据。
 - 发送前保存消息标识、请求键和确认状态。可恢复故障自动尝试最多 3 次，总时限 25 秒；失败后保留待发送项供手动重试，不会换新键重新生成。
@@ -54,7 +56,7 @@
 backend/.venv/Scripts/python.exe backend/scripts/check_android.py
 ```
 
-脚本创建隔离的本机模拟后端，运行 Kotlin 策略、网络、Room、迁移与 ViewModel 共 65 项测试。内存模拟和两种 HTTP 模式运行同一聊天业务契约，真实 SSE 直接更新 Room，并发送聊天和笔记指令，核验落库、重开数据库和用户隔离；另覆盖草稿、发送交接、旧库升级、模式切换、取消、退出时序，以及角色待确认保存恢复、缓存删除、冲突重读和两种 HTTP 模式的角色管理。凭证只从临时文件读取，不写源码、命令参数或日志；结束后清理测试服务和数据。需要本机网络、JDK/SDK、Python 开发环境及 Gradle 依赖下载权限。
+脚本创建隔离的本机模拟后端，运行 Kotlin 策略、网络、Room、迁移与 ViewModel 共 71 项测试。内存模拟和两种 HTTP 模式运行同一聊天业务契约，真实 SSE 直接更新 Room，并发送聊天和笔记指令，核验落库、重开数据库和用户隔离；另覆盖草稿、发送交接、旧库升级、模式切换、取消、退出时序、角色管理，以及资料保存/重置丢失响应后恢复、冲突读取、缓存版本保护、页面状态与双 HTTP 模式资料联调。凭证只从临时文件读取，不写源码、命令参数或日志；结束后清理测试服务和数据。需要本机网络、JDK/SDK、Python 开发环境及 Gradle 依赖下载权限。
 
 单独运行 `:core:domain:test :core:network:test :core:data:testDebugUnitTest :app:testDebugUnitTest` 时，不配置隔离后端的 4 项真实 HTTP 用例会跳过。Room 与 ViewModel 测试采用 Robolectric（API 34），不能代替设备检查。草稿复查见 [草稿报告](../docs/stage-reports/06b2a-persistent-drafts.md)，设备进度见 [验收清单](../docs/device-acceptance.md)。
 
@@ -91,8 +93,16 @@ backend/.venv/Scripts/python.exe backend/scripts/check_device.py --serial emulat
 
 执行两组实际页面流程：创建、开聊和保存笔记；强制重开后编辑、取消删除、确认删除、继续旧对话。另由主机核对跨身份不可见与笔记真实保存，共四张截图。`--characters` 与 `--extended` 互斥。结果见 [角色管理报告](../docs/stage-reports/06c1-character-management.md)。
 
+个人资料可单独验收：
+
+```powershell
+backend/.venv/Scripts/python.exe backend/scripts/check_device.py --serial emulator-5580 --profiles
+```
+
+四个检查点依次准备角色/聊天/笔记，保存资料，重开修改/切换身份/取消及确认重置，再重开验证空资料与原内容保留。主机同时读取真实后端核对，保存四张资料截图。`--profiles`、`--characters`、`--extended` 互斥；本流程不注入网络故障。结果见 [个人资料报告](../docs/stage-reports/06c2-personal-profile.md)。
+
 ## 模块边界
 
-`app` 负责依赖组装、导航、连接保存和 ViewModel；四个 `feature` 模块只读业务模型并发出操作回调。`core/domain` 不依赖 Android，`core/network` 不理解角色，`core/data` 实现 HTTP 字段转换和 Room 对齐，`core/designsystem` 只管理外观。
+`app` 负责依赖组装、导航、连接保存和 ViewModel；五个 `feature` 模块只读业务模型并发出操作回调。`core/domain` 不依赖 Android，`core/network` 不理解角色，`core/data` 实现 HTTP 字段转换和 Room 对齐，`core/designsystem` 只管理外观。
 
 `core/model`、`core/agent`、`core/tools` 与 `integrations/mcp` 仍是预留目录，不作为空 Gradle 模块加入构建。在线 Agent 继续在后端执行。
