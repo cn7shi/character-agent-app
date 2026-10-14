@@ -31,6 +31,7 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
     private val gate = Mutex()
     private val profiles = ProfileCache(db, scope, remote)
     private val outbox = MessageOutbox(db, scope, remote)
+    private val syncer = ConversationSyncer(db, scope, remote, outbox::store, ::refreshNotesLocked)
     override fun profile() = profiles.observe()
     override fun pendingProfile() = profiles.observePending()
     override suspend fun refreshProfile() = profiles.refresh()
@@ -97,21 +98,9 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
     private fun row(m: Message) = Snapshot(scope, "messages:${m.conversationId}", m.id, JsonCodec.encode(m).toString(), m.sequence.toString().padStart(20, '0'))
     private fun row(n: Note) = Snapshot(scope, "notes", n.id, JsonCodec.encode(n).toString(), n.createdAt)
 
-    private suspend fun <T> allPages(fetch: suspend (String?) -> Page<T>): List<T> {
-        val result = mutableListOf<T>()
-        var cursor: String? = null
-        val seen = mutableSetOf<String>()
-        do {
-            val page = fetch(cursor)
-            result += page.items
-            cursor = page.nextCursor
-            check(cursor == null || (seen.add(cursor) && seen.size < 1000))
-        } while (cursor != null)
-        return result
-    }
     override suspend fun refreshHome() = gate.withLock {
-        val characters = allPages(remote::characters).map(::row)
-        val conversations = allPages(remote::conversations).map(::row)
+        val characters = fetchAllPages(remote::characters).map(::row)
+        val conversations = fetchAllPages(remote::conversations).map(::row)
         // A complete successful list is authoritative, so deleted roles also disappear from cache.
         // Never clear before all pages succeed; offline refresh must preserve the previous snapshot.
         db.withTransaction {
@@ -121,20 +110,9 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
         }
     }
     override suspend fun refreshNotes() = gate.withLock { refreshNotesLocked() }
-    private suspend fun refreshNotesLocked() { dao.put(allPages(remote::notes).map(::row)) }
+    private suspend fun refreshNotesLocked() { dao.put(fetchAllPages(remote::notes).map(::row)) }
 
-    override suspend fun refreshConversation(conversationId: String) = gate.withLock {
-        val messages = allPages { remote.messages(conversationId, it) }
-        db.withTransaction {
-            for (message in messages) {
-                val existing = dao.get(scope, "messages:$conversationId", message.id)?.let { JsonCodec.message(JSONObject(it.payload)) }
-                if (existing == null || existing.updatedAt <= message.updatedAt) dao.put(listOf(row(message)))
-            }
-        }
-        // After process death, pending/streaming messages identify tasks to resume observing, never recreate.
-        for (id in messages.filter { it.status in setOf("pending", "streaming") }.map { it.runId }.distinct()) store(remote.run(id))
-        pollLocked(conversationId)
-    }
+    override suspend fun refreshConversation(conversationId: String) = syncer.refreshConversation(conversationId)
 
     override suspend fun createConversation(characterId: String): String = gate.withLock {
         val pending = dao.conversationRequest(scope, characterId) ?: ConversationRequest(scope, characterId, UUID.randomUUID().toString()).also { dao.putConversationRequest(it) }
@@ -154,30 +132,11 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
     override suspend fun dismiss(messageId: String) = outbox.dismiss(messageId)
 
     internal suspend fun store(run: Run) = outbox.store(run)
-    override suspend fun poll(conversationId: String) = gate.withLock { pollLocked(conversationId) }
-    private suspend fun pollLocked(conversationId: String) {
-        val active = dao.list(scope, "runs:$conversationId").map { JsonCodec.run(JSONObject(it.payload)) }.filterNot { it.terminal }
-        for (run in active) {
-            val current = remote.run(run.id)
-            store(current)
-            if (current.terminal) refreshNotesLocked()
-        }
-    }
-    // Observation/network retries must not hold the submission mutex and delay an explicit stop.
-    override suspend fun cancel(runId: String) { store(remote.cancel(runId)) }
 
-    override suspend fun observeConversation(conversationId: String) {
-        refreshConversation(conversationId)
-        refreshNotes() // Also reconciles a tool committed just before process death or observation cancellation.
-        val monitor = RunMonitor(remote)
-        // D25: a cancel response can commit terminal state while the event socket stays silent.
-        // Observe the active ID so Room cancels that socket and starts the next run independently.
-        runs(conversationId).map { list -> list.firstOrNull { !it.terminal }?.id }
-            .distinctUntilChanged().collectLatest { activeId ->
-                if (activeId == null) refreshNotes()
-                else monitor.follow(load = {
-                    checkNotNull(dao.get(scope, "runs:$conversationId", activeId)).let { JsonCodec.run(JSONObject(it.payload)) }
-                }, save = ::store)
-            }
-    }
+    override suspend fun poll(conversationId: String) = syncer.poll(conversationId)
+
+    override suspend fun cancel(runId: String) = syncer.cancel(runId)
+
+    override suspend fun observeConversation(conversationId: String) =
+        syncer.observeConversation(conversationId, runs(conversationId))
 }
