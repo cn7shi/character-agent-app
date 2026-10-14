@@ -30,6 +30,7 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
     private val dao = db.dao()
     private val gate = Mutex()
     private val profiles = ProfileCache(db, scope, remote)
+    private val outbox = MessageOutbox(db, scope, remote)
     override fun profile() = profiles.observe()
     override fun pendingProfile() = profiles.observePending()
     override suspend fun refreshProfile() = profiles.refresh()
@@ -82,7 +83,7 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
     override fun messages(conversationId: String) = watch("messages:$conversationId", JsonCodec::message).map { it.sortedBy(Message::sequence) }
     override fun runs(conversationId: String) = watch("runs:$conversationId", JsonCodec::run)
     override fun notes() = watch("notes", JsonCodec::note)
-    override fun pending(conversationId: String) = dao.observePending(scope, conversationId).map { rows -> rows.map { PendingMessage(it.id, it.conversationId, it.text, it.error, it.blocked) } }
+    override fun pending(conversationId: String) = outbox.pending(conversationId)
     override suspend fun draft(conversationId: String) = dao.draft(scope, conversationId)?.let { MessageDraft(it.revision, it.text) }
     override suspend fun saveDraft(conversationId: String, draft: MessageDraft) {
         require(draft.revision.isNotBlank())
@@ -145,56 +146,14 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
         conversation.id
     }
 
-    override suspend fun send(conversationId: String, text: String, draftRevision: String?) = gate.withLock {
-        val normalized = text.trim()
-        require(normalized.isNotEmpty() && normalized.codePointCount(0, normalized.length) <= 8000)
-        check(dao.pending(scope, conversationId).isEmpty())
-        check(dao.list(scope, "runs:$conversationId").none { !JsonCodec.run(JSONObject(it.payload)).terminal })
-        val pending = Outbox(scope, UUID.randomUUID().toString(), conversationId, UUID.randomUUID().toString(), normalized)
-        // D20: persist both IDs BEFORE HTTP; ambiguous failures reuse this exact request after restart.
-        db.withTransaction {
-            dao.insertPending(pending)
-            // D26: process death leaves either a draft or the original outbox identity, never a split handoff.
-            if (draftRevision != null) dao.consumeDraft(scope, conversationId, draftRevision)
-        }
-        submit(pending)
-    }
-    override suspend fun retry(messageId: String) = gate.withLock {
-        val pending = checkNotNull(dao.pendingById(scope, messageId))
-        check(!pending.blocked)
-        // Older app versions may have left a null error during process death; a manual retry is always a replay.
-        submit(pending.copy(error = pending.error ?: "上次提交结果待确认。"))
-    }
-    override suspend fun dismiss(messageId: String) = gate.withLock {
-        val pending = checkNotNull(dao.pendingById(scope, messageId))
-        // Unknown acceptance must be reconciled using the original key, never silently discarded.
-        check(pending.blocked)
-        dao.deletePending(scope, messageId)
-    }
-    private suspend fun submit(pending: Outbox) {
-        // Persist BEFORE I/O: after cancellation/process death a later rejection cannot disprove prior acceptance.
-        dao.updatePending(pending.copy(error = "正在确认发送结果，请勿重复发送。"))
-        try {
-            val run = remote.createRun(pending.conversationId, pending.id, pending.requestKey, pending.text)
-            db.withTransaction { store(run); dao.deletePending(scope, pending.id) }
-        } catch (error: Exception) {
-            if (error is CancellationException) throw error
-            // A non-retryable protocol error may follow an accepted write. Only confirmed rejection is dismissible.
-            dao.updatePending(pending.copy(error = userMessage(error), blocked = pending.error == null && error is BackendFailure && error.definitiveRejection))
-            throw error
-        }
-    }
-    internal suspend fun store(run: Run) = db.withTransaction {
-        val kind = "runs:${run.conversationId}"
-        val old = dao.get(scope, kind, run.id)?.let { JsonCodec.run(JSONObject(it.payload)) }
-        if (run.sequence < 0 || run.input.runId != run.id || run.output.runId != run.id ||
-            run.input.conversationId != run.conversationId || run.output.conversationId != run.conversationId)
-            throw BackendFailure(FailureKind.PROTOCOL)
-        // D23: this sequence is the durable SSE cursor; both messages and run commit together.
-        if (old == null || (run.sequence > old.sequence && !old.terminal)) {
-            dao.put(listOf(row(run.input), row(run.output), Snapshot(scope, kind, run.id, JsonCodec.encode(run).toString(), run.output.updatedAt)))
-        }
-    }
+    override suspend fun send(conversationId: String, text: String, draftRevision: String?) =
+        outbox.send(conversationId, text, draftRevision)
+
+    override suspend fun retry(messageId: String) = outbox.retry(messageId)
+
+    override suspend fun dismiss(messageId: String) = outbox.dismiss(messageId)
+
+    internal suspend fun store(run: Run) = outbox.store(run)
     override suspend fun poll(conversationId: String) = gate.withLock { pollLocked(conversationId) }
     private suspend fun pollLocked(conversationId: String) {
         val active = dao.list(scope, "runs:$conversationId").map { JsonCodec.run(JSONObject(it.payload)) }.filterNot { it.terminal }
