@@ -21,6 +21,7 @@ from character_app.adapters.storage.profiles import SqliteProfileStore
 from character_app.application.agent import NotesService, ToolRegistry
 from character_app.domain.chat import TextModel
 from character_app.api.auth import DevelopmentIdentityResolver, RejectingIdentityResolver
+from character_app.application.tts_service import TtsService
 from character_app.api.routes import router
 from character_app.api.schemas import HealthResponse
 from character_app.application.catalog import CatalogService, CursorCodec
@@ -57,6 +58,7 @@ def create_app(settings: Settings | None = None, *, model: TextModel | None = No
             app.state.identities = DevelopmentIdentityResolver(users) if settings.dev_auth else RejectingIdentityResolver()
             app.state.catalog = CatalogService(SqliteCatalogRepository(database), CursorCodec(key))
             app.state.profiles = ProfileService(SqliteProfileStore(database))
+            app.state.tts = TtsService()
             tool_store = SqliteToolStore(database)
             registry = ToolRegistry(tool_store, [SaveNoteTool(tool_store)])
             app.state.notes = NotesService(tool_store, CursorCodec(key))

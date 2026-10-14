@@ -102,9 +102,23 @@ fun HomeScreen(
     // Follow status
     var isFollowed by remember(currentChar.id) { mutableStateOf(false) }
 
-    // Voice simulation playback
-    var isVoicePlaying by remember(currentChar.id) { mutableStateOf(false) }
-    var voiceCountdown by remember(currentChar.id) { mutableIntStateOf(currentPage.voiceDuration) }
+    // Voice playback via VoicePlayer (Deep Module)
+    val isVoicePlaying = VoicePlayer.isPlaying.value
+    val isVoiceLoading = VoicePlayer.isLoading.value
+    val voiceCountdown = VoicePlayer.currentCountdown.value
+    val totalVoiceDuration = VoicePlayer.totalDuration.value
+
+    DisposableEffect(Unit) {
+        onDispose {
+            VoicePlayer.stop()
+        }
+    }
+
+    DisposableEffect(currentChar.id, scriptPageIndex, liveDialogueText) {
+        onDispose {
+            VoicePlayer.stop()
+        }
+    }
 
     // Input draft
     var inputDraft by remember { mutableStateOf("") }
@@ -112,19 +126,6 @@ fun HomeScreen(
     // Dialog sheets
     var showPersonaSheet by remember { mutableStateOf(false) }
     var showInspirationSheet by remember { mutableStateOf(false) }
-
-    // Countdown timer for voice simulation
-    LaunchedEffect(isVoicePlaying) {
-        if (isVoicePlaying) {
-            voiceCountdown = currentPage.voiceDuration
-            while (voiceCountdown > 0) {
-                delay(1000)
-                voiceCountdown--
-            }
-            isVoicePlaying = false
-            voiceCountdown = currentPage.voiceDuration
-        }
-    }
 
     // Swipe gesture detection
     var totalDragY by remember { mutableFloatStateOf(0f) }
@@ -143,18 +144,18 @@ fun HomeScreen(
                     onDragEnd = {
                         if (totalDragY < -60f) {
                             // Swiped UP -> Next character
+                            VoicePlayer.stop()
                             charIndex = (charIndex + 1) % PLAZA_CHARACTERS.size
                             scriptPageIndex = 0
                             liveActionText = null
                             liveDialogueText = null
-                            isVoicePlaying = false
                         } else if (totalDragY > 60f) {
                             // Swiped DOWN -> Previous character
+                            VoicePlayer.stop()
                             charIndex = (charIndex - 1 + PLAZA_CHARACTERS.size) % PLAZA_CHARACTERS.size
                             scriptPageIndex = 0
                             liveActionText = null
                             liveDialogueText = null
-                            isVoicePlaying = false
                         }
                         totalDragY = 0f
                     },
@@ -431,6 +432,9 @@ fun HomeScreen(
                 }
 
                 // 2. Dialogue Card with Voice Pill
+                val displayAction = liveActionText ?: currentPage.actionText
+                val displayDialogue = liveDialogueText ?: currentPage.dialogueText
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -445,9 +449,9 @@ fun HomeScreen(
                             .border(1.dp, Color(0x24FFFFFF), RoundedCornerShape(18.dp))
                             .clickable {
                                 // Tapping dialogue card advances multi-turn script!
+                                VoicePlayer.stop()
                                 if (liveDialogueText == null) {
                                     scriptPageIndex = (scriptPageIndex + 1) % pages.size
-                                    isVoicePlaying = false
                                 } else {
                                     // Reset back to pre-scripted pages
                                     liveActionText = null
@@ -457,8 +461,6 @@ fun HomeScreen(
                             .padding(top = 22.dp, start = 14.dp, end = 14.dp, bottom = 14.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        val displayAction = liveActionText ?: currentPage.actionText
-                        val displayDialogue = liveDialogueText ?: currentPage.dialogueText
 
                         // Action / Narrative text in italics
                         Text(
@@ -504,16 +506,26 @@ fun HomeScreen(
                             .background(Color(0xF0202128))
                             .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(20.dp))
                             .clickable {
-                                isVoicePlaying = !isVoicePlaying
-                                if (isVoicePlaying) {
-                                    Toast.makeText(context, "正在播放专属角色语音原声...", Toast.LENGTH_SHORT).show()
-                                }
+                                val fullText = if (displayAction.isNotBlank()) "（$displayAction）$displayDialogue" else displayDialogue
+                                VoicePlayer.togglePlay(
+                                    context = context,
+                                    characterName = currentChar.name,
+                                    rawText = fullText
+                                )
                             }
                             .padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(if (isVoicePlaying) "⏸" else "▶", fontSize = 10.sp, color = Color.White)
+                        Text(
+                            text = when {
+                                isVoiceLoading -> "⏳"
+                                isVoicePlaying -> "⏸"
+                                else -> "▶"
+                            },
+                            fontSize = 10.sp,
+                            color = Color.White
+                        )
                         // 4 Wave bars
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -526,7 +538,11 @@ fun HomeScreen(
                             Box(Modifier.width(2.dp).height(if (isVoicePlaying) waveHeight4.dp else 6.dp).background(Color.White))
                         }
                         Text(
-                            text = "${if (isVoicePlaying) voiceCountdown else currentPage.voiceDuration}\"",
+                            text = when {
+                                isVoiceLoading -> "生成中"
+                                isVoicePlaying -> "${voiceCountdown}\""
+                                else -> "${totalVoiceDuration.takeIf { it > 0 } ?: currentPage.voiceDuration}\""
+                            },
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White

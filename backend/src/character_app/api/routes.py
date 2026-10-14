@@ -6,13 +6,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
+from urllib.parse import quote
+
 from character_app.domain.entities import Principal, AppError
 from .auth import current_user
 from .schemas import CharacterResponse, ConversationResponse, CreateConversationRequest, ErrorResponse, MessageResponse, Page
 from .schemas import CreateRunRequest, RunResponse
 from .schemas import NoteResponse, ToolCallList
 from .schemas import CharacterDefinitionResponse, SaveCharacterRequest, DeleteCharacterResponse
-from .schemas import ProfileResponse, SaveProfileRequest, ResetProfileRequest
+from .schemas import ProfileResponse, SaveProfileRequest, ResetProfileRequest, TtsSynthesizeRequest
 
 router = APIRouter(prefix="/v1", responses={
     code: {"model": ErrorResponse} for code in (401, 403, 404, 422, 500)
@@ -138,3 +140,43 @@ async def events(run_id: UUID, request: Request, user: User,
     await asyncio.to_thread(service.repository.events, user.id, str(run_id), after)
     return StreamingResponse(service.events(user.id, str(run_id), after), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.post("/tts/synthesize", response_class=Response, tags=["TTS"])
+async def synthesize_speech(payload: TtsSynthesizeRequest, request: Request, user: User):
+    tts_service = request.app.state.tts
+    ident = payload.character_name or payload.character_id
+    result = await tts_service.synthesize(payload.text, ident)
+    return Response(
+        content=result.audio_bytes,
+        media_type=result.mime_type,
+        headers={
+            "Content-Disposition": "inline; filename=\"speech.mp3\"",
+            "X-Audio-Duration": str(result.duration_seconds),
+            "X-Clean-Text": quote(result.clean_text),
+            "X-Voice": result.voice,
+        }
+    )
+
+
+@router.get("/tts/synthesize", response_class=Response, tags=["TTS"])
+async def synthesize_speech_get(
+    request: Request,
+    user: User,
+    text: str = Query(min_length=1, max_length=2000),
+    character_name: str | None = Query(default=None),
+    character_id: str | None = Query(default=None),
+):
+    tts_service = request.app.state.tts
+    ident = character_name or character_id
+    result = await tts_service.synthesize(text, ident)
+    return Response(
+        content=result.audio_bytes,
+        media_type=result.mime_type,
+        headers={
+            "Content-Disposition": "inline; filename=\"speech.mp3\"",
+            "X-Audio-Duration": str(result.duration_seconds),
+            "X-Clean-Text": quote(result.clean_text),
+            "X-Voice": result.voice,
+        }
+    )

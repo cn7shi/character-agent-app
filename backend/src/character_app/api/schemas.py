@@ -190,3 +190,9 @@ class ErrorDetail(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: ErrorDetail
+
+
+class TtsSynthesizeRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    character_name: str | None = None
+    character_id: str | None = None
