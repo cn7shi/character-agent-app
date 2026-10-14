@@ -75,7 +75,7 @@ class ClientViewModel internal constructor(
         adapter = backend
         val repo = OfflineRepository(database, connection.scope, backend)
         repository = repo
-        mutable.value = ClientState(connected = true, url = connection.baseUrl, tab = "角色", dark = vault.dark, polling = vault.mode == ConnectionMode.POLLING,
+        mutable.value = ClientState(connected = true, url = connection.baseUrl, tab = "广场", dark = vault.dark, polling = vault.mode == ConnectionMode.POLLING,
             canManageCharacters = backend.supportsCharacterManagement, canManageProfile = backend.supportsProfile)
         session.launch {
             combine(repo.profile(), repo.pendingProfile()) { profile, pending -> profile to pending }.collect { (profile, pending) ->
@@ -205,6 +205,69 @@ class ClientViewModel internal constructor(
         val conversation = conversations().first().first { it.id == id }
         open(conversation)
     }
+    fun startPlazaCharacter(plazaChar: com.character.app.characters.PlazaCharacter) = action {
+        val existing = state.value.characters.find { it.name == plazaChar.name || it.id == plazaChar.id }
+        if (existing != null) {
+            val id = createConversation(existing.id)
+            refreshHome()
+            val conversation = conversations().first().first { it.id == id }
+            open(conversation)
+        } else if (state.value.canManageCharacters) {
+            val draft = CharacterDraft(
+                id = UUID.randomUUID().toString(),
+                name = plazaChar.name,
+                summary = plazaChar.quote,
+                systemPrompt = plazaChar.systemPrompt,
+                notesEnabled = true,
+                version = 0
+            )
+            saveCharacter(draft)
+            refreshHome()
+            val created = characters().first().find { it.name == plazaChar.name }
+            if (created != null) {
+                val id = createConversation(created.id)
+                refreshHome()
+                val conversation = conversations().first().first { it.id == id }
+                open(conversation)
+            }
+        } else {
+            val fallback = state.value.characters.firstOrNull()
+            if (fallback != null) {
+                val id = createConversation(fallback.id)
+                refreshHome()
+                val conversation = conversations().first().first { it.id == id }
+                open(conversation)
+            }
+        }
+    }
+    fun sendPlazaDirectMessage(plazaChar: com.character.app.characters.PlazaCharacter, text: String) = action {
+        val existing = state.value.characters.find { it.name == plazaChar.name || it.id == plazaChar.id }
+        val charId = if (existing != null) {
+            existing.id
+        } else if (state.value.canManageCharacters) {
+            val draft = CharacterDraft(
+                id = UUID.randomUUID().toString(),
+                name = plazaChar.name,
+                summary = plazaChar.quote,
+                systemPrompt = plazaChar.systemPrompt,
+                notesEnabled = true,
+                version = 0
+            )
+            saveCharacter(draft)
+            refreshHome()
+            characters().first().find { it.name == plazaChar.name }?.id
+        } else state.value.characters.firstOrNull()?.id
+
+        if (charId != null) {
+            val conv = conversations().first().find { it.characterId == charId }
+            val convId = conv?.id ?: createConversation(charId)
+            refreshHome()
+            val conversation = conversations().first().first { it.id == convId }
+            open(conversation)
+            send(convId, text)
+        }
+    }
+
     fun open(conversation: Conversation) {
         val repo = repository ?: return
         val profile = connectionScope ?: return
@@ -280,6 +343,19 @@ class ClientViewModel internal constructor(
                 }
             }
         }
+    }
+    fun regenerate() {
+        val current = state.value
+        val conversation = current.selected ?: return
+        val lastUserMessage = current.messages.lastOrNull { it.role == "user" } ?: return
+        if (current.busy || current.runs.any { !it.terminal }) return
+        action { send(conversation.id, lastUserMessage.text) }
+    }
+    fun sendText(text: String) {
+        val current = state.value
+        val conversation = current.selected ?: return
+        if (current.busy || current.runs.any { !it.terminal }) return
+        action { send(conversation.id, text) }
     }
     fun retry(id: String) = action { retry(id) }
     fun dismiss(id: String) = action { dismiss(id) }

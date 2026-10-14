@@ -29,9 +29,17 @@ fun SettingsScreen(currentUrl: String, connected: Boolean, dark: Boolean, busy: 
             Switch(checked = polling, onCheckedChange = onMode, enabled = !busy)
         }
         Text("默认实时接收回复。网络环境不支持时自动改用定时查询，也可在此手动开启。切换保留当前连接的聊天记录。", style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SuggestionChip(onClick = { url = "http://10.0.2.2:8000/" }, label = { Text("📱 模拟器 (10.0.2.2)") })
+            SuggestionChip(onClick = { url = "http://127.0.0.1:8000/" }, label = { Text("💻 USB/本机 (127.0.0.1)") })
+        }
         OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth(), label = { Text("服务地址") }, singleLine = true)
         OutlinedTextField(credential, { credential = it }, Modifier.fillMaxWidth(), label = { Text("开发访问凭证") }, singleLine = true,
             visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SuggestionChip(onClick = { credential = "VXyaOWUsTIYIJftfvo0qYe26FUizGyPXtGYarIs4-nQ" }, label = { Text("🔑 填入用户A凭证") })
+            SuggestionChip(onClick = { credential = "teo7AjAVh6vrRPIJHebjjjNZuZCf3vi1QTaUgN5kTM8" }, label = { Text("用户B") })
+        }
         Button(onClick = { onConnect(url, credential); credential = "" }, enabled = !busy && credential.isNotBlank()) { Text(if (connected) "切换连接" else "保存并连接") }
         if (connected) OutlinedButton(onClick = onDisconnect, enabled = !busy) { Text("断开并移除本机凭证") }
         Text("USB 调试连接可使用 127.0.0.1:8000，模拟器可使用 10.0.2.2:8000。具体启动方法见项目运行说明。", style = MaterialTheme.typography.bodySmall)

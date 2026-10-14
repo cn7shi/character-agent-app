@@ -8,6 +8,7 @@ android {
 }
 dependencies {
     implementation(project(":core:domain"))
+    implementation(project(":core:designsystem"))
     implementation(platform("androidx.compose:compose-bom:2026.02.01"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.foundation:foundation")

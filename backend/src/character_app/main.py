@@ -87,7 +87,8 @@ def create_app(settings: Settings | None = None, *, model: TextModel | None = No
         request.state.request_id = str(uuid4())
         if settings.dev_auth:
             try:
-                local = request.client is not None and ipaddress.ip_address(request.client.host).is_loopback
+                client_ip = ipaddress.ip_address(request.client.host) if request.client else None
+                local = client_ip is not None and (client_ip.is_loopback or request.client.host == "10.0.2.2")
             except ValueError:
                 local = False
             if not local:

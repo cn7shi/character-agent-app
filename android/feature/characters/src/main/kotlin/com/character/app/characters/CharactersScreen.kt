@@ -5,9 +5,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.character.app.designsystem.CharacterAvatar
 import com.character.app.domain.Character
 import com.character.app.domain.Conversation
 
@@ -23,26 +25,31 @@ fun CharactersScreen(characters: List<Character>, conversations: List<Conversati
             confirmButton = { TextButton(onClick = { deleting = null; onDelete(character) }, enabled = !busy) { Text("确认删除") } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消") } })
     }
-    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column { Text("遇见角色", style = MaterialTheme.typography.headlineMedium); Text("从一次对话开始", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 TextButton(onClick = onRefresh, enabled = !busy) { Text("刷新") }
             }
         }
         if (canManage) item {
             Button(onClick = onAdd, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                Text(if (hasPendingEdit) "继续确认角色保存" else "创建角色")
+                Text(if (hasPendingEdit) "继续确认角色保存" else "✨ 创建属于你的新角色")
             }
             if (hasPendingEdit) Text("上次保存结果待确认，继续处理会沿用原角色，不会重新创建。", style = MaterialTheme.typography.bodySmall)
         }
         if (characters.isEmpty()) item { Text("还没有角色资料。连接开发服务后刷新；已缓存的资料可离线查看。") }
         items(characters, key = { "character:${it.id}" }) { character ->
             Card(Modifier.fillMaxWidth().testTag("character-card")) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(character.name, style = MaterialTheme.typography.titleLarge)
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        CharacterAvatar(name = character.name, size = 50.dp)
+                        Column(Modifier.weight(1f)) {
+                            Text(character.name, style = MaterialTheme.typography.titleLarge)
+                            Text(if (character.editable) "我的角色 · 仅自己可见" else "官方内置角色", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
                     Text(character.summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(if (character.editable) "我的角色 · 仅自己可见" else "内置角色", style = MaterialTheme.typography.labelMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { onNew(character) }, enabled = !busy) { Text("开启新对话") }
                         if (character.editable && canManage) {
@@ -53,11 +60,17 @@ fun CharactersScreen(characters: List<Character>, conversations: List<Conversati
                 }
             }
         }
-        item { Spacer(Modifier.height(12.dp)); Text("最近对话", style = MaterialTheme.typography.titleLarge) }
+        item { Spacer(Modifier.height(10.dp)); Text("最近对话", style = MaterialTheme.typography.titleLarge) }
         if (conversations.isEmpty()) item { Text("你的对话会保留在这里。") }
         items(conversations, key = { "conversation:${it.id}" }) { conversation ->
             OutlinedCard(onClick = { onOpen(conversation) }, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) { Text(conversation.title); Text("继续聊天  ›", color = MaterialTheme.colorScheme.primary) }
+                Row(Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CharacterAvatar(name = conversation.title, size = 36.dp)
+                        Text(conversation.title, style = MaterialTheme.typography.bodyLarge)
+                    }
+                    Text("继续聊天 ›", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                }
             }
         }
     }

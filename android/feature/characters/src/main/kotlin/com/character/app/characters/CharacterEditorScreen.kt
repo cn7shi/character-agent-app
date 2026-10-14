@@ -20,19 +20,19 @@ fun CharacterEditorScreen(draft: CharacterDraft, busy: Boolean, pending: Boolean
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text(if (draft.version == 0) "创建角色" else "编辑角色", style = MaterialTheme.typography.headlineMedium)
-        Text("仅自己可见。修改人设和能力会用于新对话，已有对话保留创建时的设定。")
+        Text("仅自己可见。设定好的人设将实时指导 Groq 大模型，已有对话保留创建时的设定。")
         if (pending) Text("上次保存结果待确认。可以重试原内容，或重新读取已保存版本。", color = MaterialTheme.colorScheme.primary)
         OutlinedTextField(draft.name, { onChange(draft.copy(name = it)) }, Modifier.fillMaxWidth(), enabled = editable,
             label = { Text("角色名称") }, supportingText = { Text("必填，最多 100 字") }, singleLine = true)
         OutlinedTextField(draft.summary, { onChange(draft.copy(summary = it)) }, Modifier.fillMaxWidth(), enabled = editable,
-            label = { Text("角色简介") }, supportingText = { Text("可选，最多 500 字") }, minLines = 2, maxLines = 4)
+            label = { Text("角色简介") }, supportingText = { Text("可选，最多 500 字；简述身份与性格") }, minLines = 2, maxLines = 4)
         OutlinedTextField(draft.systemPrompt, { onChange(draft.copy(systemPrompt = it)) }, Modifier.fillMaxWidth(), enabled = editable,
-            label = { Text("角色人设") }, supportingText = { Text("必填，最多 8000 字；描述性格、说话方式和相处设定") }, minLines = 4, maxLines = 8)
+            label = { Text("角色详细人设") }, supportingText = { Text("必填，最多 8000 字；描述性格、语气习惯、与你的关系，支持设定【开场白】或 *动作描写* 习惯") }, minLines = 5, maxLines = 10)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column(Modifier.weight(1f)) { Text("允许保存笔记"); Text("角色可通过笔记工具帮你记录内容。", style = MaterialTheme.typography.bodySmall) }
+            Column(Modifier.weight(1f)) { Text("允许保存笔记"); Text("角色可通过笔记工具帮你记录日常安排。", style = MaterialTheme.typography.bodySmall) }
             Switch(draft.notesEnabled, { onChange(draft.copy(notesEnabled = it)) }, enabled = editable)
         }
-        Text("当前演示仍使用固定回复。真实模型配置后才会按人设生成不同回复。", style = MaterialTheme.typography.bodySmall)
+        Text("✨ 已接入 Groq (Qwen 27B) 大模型驱动，支持流式对话与动作描写渲染。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         Button(onClick = onSave, enabled = !busy && valid, modifier = Modifier.fillMaxWidth()) { Text(if (pending) "重试原内容" else "保存角色") }
         if (draft.version > 0 || pending) TextButton(onClick = onReload, enabled = !busy) { Text("放弃修改，读取已保存版本") }
         TextButton(onClick = onClose, enabled = !busy) { Text(if (pending) "稍后继续" else "取消编辑") }
