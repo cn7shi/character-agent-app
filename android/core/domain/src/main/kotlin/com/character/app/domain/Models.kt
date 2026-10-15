@@ -1,93 +1,144 @@
 package com.character.app.domain
 
-import kotlinx.coroutines.flow.Flow
+/**
+ * Character entity.
+ */
+data class Character(
+    val id: String,
+    val name: String,
+    val summary: String,
+    val version: Int,
+    val editable: Boolean = false,
+)
 
-data class Character(val id: String, val name: String, val summary: String, val version: Int, val editable: Boolean = false)
-/** version is the expected saved version; zero denotes a new, client-assigned ID. */
-data class CharacterDraft(val id: String, val name: String, val summary: String, val systemPrompt: String,
-                          val notesEnabled: Boolean, val version: Int)
-data class Conversation(val id: String, val characterId: String, val title: String, val updatedAt: String)
-data class MessageBlock(val kind: String, val text: String)
-data class Message(val id: String, val conversationId: String, val runId: String, val sequence: Long,
-                   val role: String, val blocks: List<MessageBlock>, val status: String, val updatedAt: String) {
-    val text: String get() = blocks.joinToString("\n") { it.text }
-}
-data class Run(val id: String, val conversationId: String, val status: String, val sequence: Long,
-               val input: Message, val output: Message, val simulated: Boolean, val error: String?) {
-    val terminal: Boolean get() = status in setOf("completed", "failed", "cancelled")
-}
-data class Note(val id: String, val conversationId: String, val title: String, val content: String, val createdAt: String)
-data class PendingMessage(val id: String, val conversationId: String, val text: String, val error: String?, val blocked: Boolean)
-data class MessageDraft(val revision: String, val text: String)
-enum class DraftSaveState { LOADING, SAVING, SAVED, FAILED }
-data class Page<T>(val items: List<T>, val nextCursor: String?)
+/**
+ * Character editing draft.
+ * [version] is the expected saved version; zero denotes a new, client-assigned ID.
+ */
+data class CharacterDraft(
+    val id: String,
+    val name: String,
+    val summary: String,
+    val systemPrompt: String,
+    val notesEnabled: Boolean,
+    val version: Int,
+)
 
-data class UserProfile(val nickname: String = "", val bio: String = "", val version: Int = 0)
-/** The value carries the expected version, including for a reset. */
-data class ProfileChange(val value: UserProfile, val reset: Boolean = false)
+/**
+ * Conversation entity metadata.
+ */
+data class Conversation(
+    val id: String,
+    val characterId: String,
+    val title: String,
+    val updatedAt: String,
+)
 
-/** D18: screens depend on these business objects, never Room rows or transport JSON. */
-interface CharacterRepository {
-    fun profile(): Flow<UserProfile?>
-    fun pendingProfile(): Flow<ProfileChange?>
-    suspend fun refreshProfile()
-    suspend fun saveProfile(profile: UserProfile)
-    suspend fun resetProfile(version: Int)
-    suspend fun retryProfile()
-    suspend fun reloadProfile(): UserProfile
-    fun pendingCharacter(): Flow<CharacterDraft?>
-    suspend fun characterDefinition(id: String): CharacterDraft
-    suspend fun saveCharacter(draft: CharacterDraft)
-    suspend fun reloadCharacter(id: String): CharacterDraft?
-    suspend fun deleteCharacter(id: String)
-    fun characters(): Flow<List<Character>>
-    fun conversations(): Flow<List<Conversation>>
-    fun messages(conversationId: String): Flow<List<Message>>
-    fun pending(conversationId: String): Flow<List<PendingMessage>>
-    fun runs(conversationId: String): Flow<List<Run>>
-    fun notes(): Flow<List<Note>>
-    suspend fun draft(conversationId: String): MessageDraft?
-    suspend fun saveDraft(conversationId: String, draft: MessageDraft)
-    suspend fun refreshHome()
-    suspend fun refreshConversation(conversationId: String)
-    suspend fun refreshNotes()
-    suspend fun createConversation(characterId: String): String
-    /** If supplied, consume only this draft revision in the same transaction as the outbox insert. */
-    suspend fun send(conversationId: String, text: String, draftRevision: String? = null)
-    suspend fun retry(messageId: String)
-    suspend fun dismiss(messageId: String)
-    suspend fun poll(conversationId: String)
-    /** Foreground observation; cancelling collection never cancels the server's task. */
-    suspend fun observeConversation(conversationId: String)
-    suspend fun cancel(runId: String)
+/**
+ * Text or action block in a message.
+ */
+data class MessageBlock(
+    val kind: String,
+    val text: String,
+)
+
+/**
+ * Chat message entity.
+ */
+data class Message(
+    val id: String,
+    val conversationId: String,
+    val runId: String,
+    val sequence: Long,
+    val role: String,
+    val blocks: List<MessageBlock>,
+    val status: String,
+    val updatedAt: String,
+) {
+    val text: String
+        get() = blocks.joinToString("\n") { it.text }
 }
 
-/** The backend protocol can change without changing the repository or presentation contracts. */
-interface BackendGateway {
-    suspend fun profile(): UserProfile = throw BackendFailure(FailureKind.UNSUPPORTED)
-    suspend fun saveProfile(profile: UserProfile): UserProfile = throw BackendFailure(FailureKind.UNSUPPORTED)
-    suspend fun resetProfile(version: Int): UserProfile = throw BackendFailure(FailureKind.UNSUPPORTED)
-    suspend fun characterDefinition(id: String): CharacterDraft = throw BackendFailure(FailureKind.UNSUPPORTED)
-    suspend fun saveCharacter(draft: CharacterDraft): CharacterDraft = throw BackendFailure(FailureKind.UNSUPPORTED)
-    suspend fun deleteCharacter(id: String): Unit = throw BackendFailure(FailureKind.UNSUPPORTED)
-    suspend fun characters(cursor: String?): Page<Character>
-    suspend fun conversations(cursor: String?): Page<Conversation>
-    suspend fun messages(conversationId: String, cursor: String?): Page<Message>
-    suspend fun notes(cursor: String?): Page<Note>
-    suspend fun createConversation(characterId: String, requestKey: String): Conversation
-    suspend fun createRun(conversationId: String, messageId: String, requestKey: String, text: String): Run
-    suspend fun run(runId: String): Run
-    suspend fun cancel(runId: String): Run
+/**
+ * Agent execution run state.
+ */
+data class Run(
+    val id: String,
+    val conversationId: String,
+    val status: String,
+    val sequence: Long,
+    val input: Message,
+    val output: Message,
+    val simulated: Boolean,
+    val error: String?,
+) {
+    val terminal: Boolean
+        get() = status in TERMINAL_STATUSES
+
+    private companion object {
+        private val TERMINAL_STATUSES = setOf("completed", "failed", "cancelled")
+    }
 }
 
-/** Protocol-neutral boundary. Unsupported capabilities must be declared, not silently emulated. */
-interface BackendAdapter : BackendGateway, AutoCloseable {
-    val supportsProfile: Boolean get() = false
-    val supportsCharacterManagement: Boolean get() = false
-    val supportsEvents: Boolean
-    fun events(runId: String, afterSequence: Long): Flow<RunEvent>
+/**
+ * User saved note.
+ */
+data class Note(
+    val id: String,
+    val conversationId: String,
+    val title: String,
+    val content: String,
+    val createdAt: String,
+)
+
+/**
+ * Local outbox pending message.
+ */
+data class PendingMessage(
+    val id: String,
+    val conversationId: String,
+    val text: String,
+    val error: String?,
+    val blocked: Boolean,
+)
+
+/**
+ * Local conversation draft message.
+ */
+data class MessageDraft(
+    val revision: String,
+    val text: String,
+)
+
+enum class DraftSaveState {
+    LOADING,
+    SAVING,
+    SAVED,
+    FAILED,
 }
 
-data class RunEvent(val runId: String, val sequence: Long, val kind: EventKind,
-                    val message: Message? = null, val error: String? = null)
-enum class EventKind { ACCEPTED, STARTED, MESSAGE, CANCEL_REQUESTED, COMPLETED, FAILED, CANCELLED, TOOL, UNKNOWN }
+/**
+ * Generic cursor-paginated response wrapper.
+ */
+data class Page<T>(
+    val items: List<T>,
+    val nextCursor: String?,
+)
+
+/**
+ * User profile entity.
+ */
+data class UserProfile(
+    val nickname: String = "",
+    val bio: String = "",
+    val version: Int = 0,
+)
+
+/**
+ * User profile change payload.
+ * The [value] carries the expected version, including for a reset.
+ */
+data class ProfileChange(
+    val value: UserProfile,
+    val reset: Boolean = false,
+)
