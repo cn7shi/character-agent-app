@@ -48,6 +48,9 @@ internal class FixtureBackend : BackendAdapter {
         if (loseConversationResponse) { loseConversationResponse = false; throw RemoteFailure() }
         return conversation
     }
+    override suspend fun renameConversation(conversationId: String, title: String, expectedVersion: Int): Conversation {
+        return conversation.copy(title = title, version = expectedVersion + 1)
+    }
     override suspend fun createRun(conversationId: String, messageId: String, requestKey: String, text: String): Run {
         requests += listOf(conversationId, messageId, requestKey, text)
         if (forbidden) throw RemoteFailure(422)
@@ -450,5 +453,21 @@ class OfflineRepositoryTest {
         try { repository().retry(pending.id); fail() } catch (_: RemoteFailure) { }
         assertFalse(repository().pending("conversation").first().single().blocked)
         assertEquals(1, backend.writes)
+    }
+
+    @Test fun renameConversationUpdatesRoomSnapshot() = runBlocking {
+        val repo = repository()
+        repo.refreshHome()
+        val original = repo.conversations().first().single()
+        assertEquals("林舟", original.title)
+        assertEquals(1, original.version)
+
+        val updated = repo.renameConversation(original.id, "林舟 - 深入对话", original.version)
+        assertEquals("林舟 - 深入对话", updated.title)
+        assertEquals(2, updated.version)
+
+        val cached = repo.conversations().first().single()
+        assertEquals("林舟 - 深入对话", cached.title)
+        assertEquals(2, cached.version)
     }
 }

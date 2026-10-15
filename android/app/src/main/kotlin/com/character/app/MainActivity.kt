@@ -142,10 +142,14 @@ class MainActivity : ComponentActivity() {
                                     HomeScreen(
                                         conversations = state.conversations,
                                         characters = state.characters,
+                                        selectedConversation = state.selected,
                                         onOpenConversation = model::open,
                                         onStartWithCharacter = { plaza ->
                                             activePlazaCharId = plaza.id
                                             model.startPlazaCharacter(plaza)
+                                        },
+                                        onRenameConversation = { convId, newTitle ->
+                                            model.renameConversation(convId, newTitle)
                                         },
                                         onOpenPlaza = { model.tab("广场") },
                                         onOpenExplore = { model.tab("实验玩法") },
@@ -183,6 +187,7 @@ class MainActivity : ComponentActivity() {
                                 "消息" -> {
                                     MessagesScreen(
                                         conversations = state.conversations,
+                                        characters = state.characters,
                                         notes = state.notes,
                                         userProfile = state.userProfile,
                                         busy = state.busy,
@@ -197,6 +202,9 @@ class MainActivity : ComponentActivity() {
                                             activePlazaCharId = plaza.id
                                             model.startPlazaCharacter(plaza)
                                             model.tab("首页")
+                                        },
+                                        onRenameConversation = { conv, newTitle ->
+                                            model.renameConversation(conv.id, newTitle)
                                         },
                                         onRefresh = model::refreshHome,
                                         onNewCharacter = model::newCharacter,

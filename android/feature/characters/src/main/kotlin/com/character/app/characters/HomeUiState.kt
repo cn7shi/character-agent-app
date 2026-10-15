@@ -1,5 +1,21 @@
 package com.character.app.characters
 
+import java.util.UUID
+
+/**
+ * HomeChatMessage
+ *
+ * Represents an individual message turn in the WeChat-style roleplay conversation stream.
+ */
+data class HomeChatMessage(
+    val id: String = UUID.randomUUID().toString(),
+    val role: String, // "user" or "assistant"
+    val actionText: String? = null,
+    val dialogueText: String,
+    val voiceDuration: Int = 5,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 /**
  * HomeUiState
  *
@@ -15,7 +31,8 @@ data class HomeUiState(
     val isFollowed: Boolean = false,
     val inputDraft: String = "",
     val showPersonaSheet: Boolean = false,
-    val showInspirationSheet: Boolean = false
+    val showInspirationSheet: Boolean = false,
+    val characterMessages: Map<String, List<HomeChatMessage>> = emptyMap()
 ) {
     val currentChar: PlazaCharacter
         get() = PLAZA_CHARACTERS[characterIndex.coerceIn(0, PLAZA_CHARACTERS.lastIndex)]
@@ -29,13 +46,34 @@ data class HomeUiState(
         get() = pages[scriptPageIndex.coerceIn(0, pages.lastIndex)]
 
     val displayActionText: String
-        get() = liveActionText ?: currentPage.actionText
+        get() = liveActionText ?: currentMessages.lastOrNull { it.role == "assistant" }?.actionText ?: currentPage.actionText
 
     val displayDialogueText: String
-        get() = liveDialogueText ?: currentPage.dialogueText
+        get() = liveDialogueText ?: currentMessages.lastOrNull { it.role == "assistant" }?.dialogueText ?: currentPage.dialogueText
 
     val hasLiveDialogue: Boolean
-        get() = liveDialogueText != null
+        get() = liveDialogueText != null || characterMessages[currentChar.id]?.any { it.role == "user" } == true
+
+    /**
+     * Active message stream for the current character in WeChat-style sequential order.
+     */
+    val currentMessages: List<HomeChatMessage>
+        get() {
+            val list = characterMessages[currentChar.id]
+            return if (!list.isNullOrEmpty()) {
+                list
+            } else {
+                listOf(
+                    HomeChatMessage(
+                        id = "prologue-${currentChar.id}-${scriptPageIndex}",
+                        role = "assistant",
+                        actionText = currentPage.actionText,
+                        dialogueText = currentPage.dialogueText,
+                        voiceDuration = currentPage.voiceDuration
+                    )
+                )
+            }
+        }
 
     fun selectCharacterById(charId: String?): HomeUiState {
         if (charId == null) return this
@@ -81,7 +119,8 @@ data class HomeUiState(
             // Dismiss live dialogue and return to script progression
             copy(
                 liveActionText = null,
-                liveDialogueText = null
+                liveDialogueText = null,
+                characterMessages = characterMessages - currentChar.id
             )
         } else {
             val nextScriptPage = (scriptPageIndex + 1) % pages.size
@@ -89,13 +128,56 @@ data class HomeUiState(
         }
     }
 
-    fun applyAssistantReply(rawMessage: String?): HomeUiState {
-        val parsed = ReplyParser.parse(rawMessage) ?: return this
-        return copy(
-            liveActionText = parsed.actionText,
-            liveDialogueText = parsed.dialogueText,
-            isAiGenerating = false
+    fun addUserMessage(userText: String): HomeUiState {
+        val userMsg = HomeChatMessage(
+            role = "user",
+            dialogueText = userText
         )
+        val existing = currentMessages
+        val updated = existing + userMsg
+        return copy(
+            characterMessages = characterMessages + (currentChar.id to updated),
+            inputDraft = "",
+            isAiGenerating = true,
+            liveActionText = "（正在沉思与审视……）",
+            liveDialogueText = "...",
+            showInspirationSheet = false
+        )
+    }
+
+    fun addAssistantReply(action: String, dialogue: String): HomeUiState {
+        val existing = currentMessages.toMutableList()
+        val lastIndex = existing.lastIndex
+        val hasUserMsgBefore = existing.any { it.role == "user" }
+
+        if (lastIndex >= 0 && existing[lastIndex].role == "assistant" && hasUserMsgBefore) {
+            val lastMsg = existing[lastIndex]
+            existing[lastIndex] = lastMsg.copy(
+                actionText = action,
+                dialogueText = dialogue
+            )
+        } else {
+            existing.add(
+                HomeChatMessage(
+                    role = "assistant",
+                    actionText = action,
+                    dialogueText = dialogue,
+                    voiceDuration = 5
+                )
+            )
+        }
+        return copy(
+            characterMessages = characterMessages + (currentChar.id to existing),
+            liveActionText = action,
+            liveDialogueText = dialogue,
+            isAiGenerating = false,
+            showInspirationSheet = true
+        )
+    }
+
+    fun applyAssistantReply(rawMessage: String?): HomeUiState {
+        val parsed = ReplyParser.parse(rawMessage) ?: return copy(isAiGenerating = false)
+        return addAssistantReply(parsed.actionText, parsed.dialogueText)
     }
 
     fun startUserSending(): HomeUiState {
@@ -103,16 +185,13 @@ data class HomeUiState(
             inputDraft = "",
             isAiGenerating = true,
             liveActionText = "（正在沉思与审视……）",
-            liveDialogueText = "..."
+            liveDialogueText = "...",
+            showInspirationSheet = false
         )
     }
 
     fun finishAiGenerating(action: String, dialogue: String): HomeUiState {
-        return copy(
-            isAiGenerating = false,
-            liveActionText = action,
-            liveDialogueText = dialogue
-        )
+        return addAssistantReply(action, dialogue)
     }
 
     fun toggleFollow(): HomeUiState = copy(isFollowed = !isFollowed)

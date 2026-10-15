@@ -31,7 +31,10 @@ import com.character.app.characters.PlazaCharacter
 fun ConversationItemRow(
     character: PlazaCharacter,
     onClick: () -> Unit,
+    title: String = character.name,
+    subtitle: String = character.quote,
     timeText: String = "刚刚",
+    onRename: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -80,13 +83,16 @@ fun ConversationItemRow(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f, fill = false)
                 ) {
                     Text(
-                        text = character.name,
+                        text = title,
                         fontSize = 14.5.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Box(
                         modifier = Modifier
@@ -102,15 +108,36 @@ fun ConversationItemRow(
                         )
                     }
                 }
-                Text(
-                    text = timeText,
-                    fontSize = 10.5.sp,
-                    color = Color(0x66FFFFFF)
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = timeText,
+                        fontSize = 10.5.sp,
+                        color = Color(0x66FFFFFF)
+                    )
+                    if (onRename != null) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(Color(0x1AFFFFFF))
+                                .clickable { onRename() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "✎",
+                                fontSize = 12.sp,
+                                color = Color(0xFFF5B041)
+                            )
+                        }
+                    }
+                }
             }
 
             Text(
-                text = character.quote,
+                text = subtitle,
                 fontSize = 12.sp,
                 color = Color(0x80FFFFFF),
                 maxLines = 1,

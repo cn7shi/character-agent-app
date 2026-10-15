@@ -1,0 +1,52 @@
+name: Release Android App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release Tag (e.g. v0.6.3)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Make Gradlew Executable
+        run: chmod +x android/gradlew
+
+      - name: Build Debug APK
+        working-directory: ./android
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Prepare APK Asset
+        run: |
+          TAG_NAME="${{ github.event.inputs.tag || github.ref_name }}"
+          mkdir -p release-artifacts
+          cp android/app/build/outputs/apk/debug/app-debug.apk release-artifacts/character-agent-app-${TAG_NAME}.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Release ${{ github.event.inputs.tag || github.ref_name }}
+          files: release-artifacts/*.apk
+          generate_release_notes: true
+          draft: false
+          prerelease: false

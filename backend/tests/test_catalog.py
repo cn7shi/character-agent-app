@@ -216,9 +216,10 @@ class CatalogTests(unittest.TestCase):
 
     def test_openapi_matches_implemented_operations_and_errors(self):
         schema = self.client.get("/openapi.json").json()
-        operations = {(method.upper(), path) for path, methods in schema['paths'].items() for method in methods if method in {'get', 'post', 'put', 'delete'}}
-        self.assertEqual(len(operations), 21)
+        operations = {(method.upper(), path) for path, methods in schema['paths'].items() for method in methods if method in {'get', 'post', 'put', 'delete', 'patch'}}
+        self.assertEqual(len(operations), 22)
         self.assertIn(("POST", "/v1/conversations/{conversation_id}/runs"), operations)
+        self.assertIn(("PATCH", "/v1/conversations/{conversation_id}"), operations)
         self.assertIn(("POST", "/v1/tts/synthesize"), operations)
         self.assertIn(("GET", "/v1/tts/synthesize"), operations)
         for path, methods in schema["paths"].items():
@@ -229,6 +230,56 @@ class CatalogTests(unittest.TestCase):
                 self.assertIn("ErrorResponse", json.dumps(operation["responses"]["422"]))
         response = self.client.get("/v1/characters/not-a-uuid", headers=self.auth_a)
         self.assertEqual(response.json()["error"]["request_id"], response.headers["x-request-id"])
+
+    def test_rename_conversation_and_optimistic_concurrency(self):
+        created = self.create().json()
+        conv_id = created["id"]
+        self.assertEqual(created["version"], 1)
+
+        # 1. Normal rename increments version to 2
+        renamed = self.client.patch(
+            f"/v1/conversations/{conv_id}",
+            json={"title": "  夜幕密谈  ", "expected_version": 1},
+            headers=self.auth_a,
+        )
+        self.assertEqual(renamed.status_code, 200)
+        data = renamed.json()
+        self.assertEqual(data["title"], "夜幕密谈")
+        self.assertEqual(data["version"], 2)
+
+        # 2. Idempotent retry returns existing updated state
+        retry = self.client.patch(
+            f"/v1/conversations/{conv_id}",
+            json={"title": "夜幕密谈", "expected_version": 1},
+            headers=self.auth_a,
+        )
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(retry.json()["version"], 2)
+
+        # 3. Conflicting version returns 409
+        conflict = self.client.patch(
+            f"/v1/conversations/{conv_id}",
+            json={"title": "另一个新标题", "expected_version": 1},
+            headers=self.auth_a,
+        )
+        self.assertEqual(conflict.status_code, 409)
+        self.assertEqual(conflict.json()["error"]["code"], "CONVERSATION_VERSION_CONFLICT")
+
+        # 4. Empty or whitespace-only title returns 422
+        invalid = self.client.patch(
+            f"/v1/conversations/{conv_id}",
+            json={"title": "   ", "expected_version": 2},
+            headers=self.auth_a,
+        )
+        self.assertEqual(invalid.status_code, 422)
+
+        # 5. User B cannot rename User A's conversation
+        other_user = self.client.patch(
+            f"/v1/conversations/{conv_id}",
+            json={"title": "窃取会话", "expected_version": 2},
+            headers=self.auth_b,
+        )
+        self.assertEqual(other_user.status_code, 404)
 
     def test_migration_is_atomic_and_detects_changed_history(self):
         directory = self.directory / "migration-cases"

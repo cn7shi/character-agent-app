@@ -88,6 +88,9 @@ class CatalogService:
             next_cursor = self.cursors.encode(scope, (last.updated_at, last.id))
         return {"items": items, "next_cursor": next_cursor}
 
+    def rename_conversation(self, user_id: str, conversation_id: str, title: str, expected_version: int):
+        return self.repository.rename_conversation(user_id, conversation_id, title, expected_version)
+
     def messages(self, user_id: str, conversation_id: str, cursor: str | None, limit: int):
         self.repository.conversation(user_id, conversation_id)
         scope = f"messages:{user_id}:{conversation_id}"

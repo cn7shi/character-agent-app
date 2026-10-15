@@ -120,6 +120,19 @@ class HttpBackend(
         JsonCodec.conversation(JSONObject(raw))
     }
 
+    override suspend fun renameConversation(
+        conversationId: String,
+        title: String,
+        expectedVersion: Int,
+    ): Conversation = decode {
+        val body = JSONObject()
+            .put("title", title)
+            .put("expected_version", expectedVersion)
+            .toString()
+        val raw = transport.request("PATCH", "/v1/conversations/$conversationId", body)
+        JsonCodec.conversation(JSONObject(raw))
+    }
+
     override suspend fun createRun(
         conversationId: String,
         messageId: String,

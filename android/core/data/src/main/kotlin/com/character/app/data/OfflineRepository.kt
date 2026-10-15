@@ -128,6 +128,21 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
         conversation.id
     }
 
+    override suspend fun renameConversation(
+        conversationId: String,
+        title: String,
+        expectedVersion: Int,
+    ): Conversation = gate.withLock {
+        val normalized = title.trim()
+        fun String.count() = codePointCount(0, length)
+        require(normalized.count() in 1..100)
+        val updated = remote.renameConversation(conversationId, normalized, expectedVersion)
+        db.withTransaction {
+            dao.put(listOf(row(updated)))
+        }
+        updated
+    }
+
     override suspend fun send(conversationId: String, text: String, draftRevision: String?) =
         outbox.send(conversationId, text, draftRevision)
 

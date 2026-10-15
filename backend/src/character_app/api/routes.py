@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 from character_app.domain.entities import Principal, AppError
 from .auth import current_user
-from .schemas import CharacterResponse, ConversationResponse, CreateConversationRequest, ErrorResponse, MessageResponse, Page
+from .schemas import CharacterResponse, ConversationResponse, CreateConversationRequest, RenameConversationRequest, ErrorResponse, MessageResponse, Page
 from .schemas import CreateRunRequest, RunResponse
 from .schemas import NoteResponse, ToolCallList
 from .schemas import CharacterDefinitionResponse, SaveCharacterRequest, DeleteCharacterResponse
@@ -85,6 +85,14 @@ def create_conversation(
 @router.get("/conversations", response_model=Page[ConversationResponse], tags=["Conversations"])
 def conversations(request: Request, user: User, limit: Limit = 20, cursor: Cursor = None):
     return request.app.state.catalog.conversations(user.id, cursor, limit)
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ConversationResponse,
+              responses={409: {"model": ErrorResponse}}, tags=["Conversations"])
+def rename_conversation(conversation_id: UUID, payload: RenameConversationRequest, request: Request, user: User):
+    return request.app.state.catalog.rename_conversation(
+        user.id, str(conversation_id), payload.title, payload.expected_version
+    )
 
 
 @router.get("/conversations/{conversation_id}/messages", response_model=Page[MessageResponse], tags=["Conversations"])

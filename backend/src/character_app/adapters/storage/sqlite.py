@@ -237,3 +237,28 @@ class SqliteCatalogRepository:
         if row is None:
             raise not_found()
         return conversation_from(row)
+
+    def rename_conversation(self, user_id: str, conversation_id: str, title: str, expected_version: int) -> Conversation:
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM conversations WHERE user_id = ? AND id = ?",
+                (user_id, conversation_id),
+            ).fetchone()
+            if row is None:
+                raise not_found()
+            current = conversation_from(row)
+            if current.version == expected_version + 1 and current.title == title:
+                return current
+            if current.version != expected_version:
+                raise AppError(409, "CONVERSATION_VERSION_CONFLICT", "会话已被修改，请重新读取后再试。")
+            timestamp = now()
+            connection.execute(
+                "UPDATE conversations SET title = ?, version = version + 1, updated_at = ? WHERE user_id = ? AND id = ?",
+                (title, timestamp, user_id, conversation_id),
+            )
+            updated = connection.execute(
+                "SELECT * FROM conversations WHERE user_id = ? AND id = ?",
+                (user_id, conversation_id),
+            ).fetchone()
+            return conversation_from(updated)
+

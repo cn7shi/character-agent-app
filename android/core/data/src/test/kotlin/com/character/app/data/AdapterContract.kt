@@ -26,4 +26,7 @@ internal suspend fun verifyAdapterContract(adapter: BackendAdapter, characterId:
     val messages = adapter.messages(conversation.id, null).items
     assertEquals(2, messages.size)
     assertEquals(2, messages.map { it.id }.toSet().size)
+    val renamed = adapter.renameConversation(conversation.id, "修改后的标题", conversation.version)
+    assertEquals("修改后的标题", renamed.title)
+    assertEquals(conversation.version + 1, renamed.version)
 }

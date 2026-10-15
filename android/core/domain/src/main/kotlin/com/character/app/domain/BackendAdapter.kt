@@ -19,6 +19,8 @@ interface BackendGateway {
     suspend fun notes(cursor: String?): Page<Note>
 
     suspend fun createConversation(characterId: String, requestKey: String): Conversation
+    suspend fun renameConversation(conversationId: String, title: String, expectedVersion: Int): Conversation =
+        throw BackendFailure(FailureKind.UNSUPPORTED)
     suspend fun createRun(conversationId: String, messageId: String, requestKey: String, text: String): Run
     suspend fun run(runId: String): Run
     suspend fun cancel(runId: String): Run

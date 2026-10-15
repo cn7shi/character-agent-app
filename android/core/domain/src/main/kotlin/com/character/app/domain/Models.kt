@@ -32,6 +32,7 @@ data class Conversation(
     val characterId: String,
     val title: String,
     val updatedAt: String,
+    val version: Int = 1,
 )
 
 /**

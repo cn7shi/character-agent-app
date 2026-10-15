@@ -34,11 +34,13 @@ import com.character.app.characters.PlazaCharacter
 @Composable
 fun HomeTopBar(
     currentChar: PlazaCharacter,
+    conversationTitle: String? = null,
     isFollowed: Boolean,
     onToggleFollow: () -> Unit,
     onCycleCharacter: () -> Unit,
     onOpenPlaza: () -> Unit,
     onOpenPersona: () -> Unit,
+    onRenameConversation: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -78,12 +80,32 @@ fun HomeTopBar(
                         contentScale = ContentScale.Crop
                     )
                     Column(verticalArrangement = Arrangement.Center) {
-                        Text(
-                            text = currentChar.name,
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = conversationTitle ?: currentChar.name,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 140.dp)
+                            )
+                            if (onRenameConversation != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0x26FFFFFF))
+                                        .clickable { onRenameConversation() },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("✎", fontSize = 10.sp, color = Color(0xFFF5B041))
+                                }
+                            }
+                        }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp)

@@ -43,6 +43,7 @@ interface CharacterRepository {
 
     // --- Conversation & Messaging Operations ---
     suspend fun createConversation(characterId: String): String
+    suspend fun renameConversation(conversationId: String, title: String, expectedVersion: Int): Conversation
 
     /** If supplied, consume only this draft revision in the same transaction as the outbox insert. */
     suspend fun send(conversationId: String, text: String, draftRevision: String? = null)

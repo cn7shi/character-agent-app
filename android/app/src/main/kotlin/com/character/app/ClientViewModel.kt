@@ -375,6 +375,20 @@ class ClientViewModel internal constructor(
         open(conversation)
     }
 
+    fun renameConversation(conversationId: String, newTitle: String) = action {
+        val repo = repository ?: return@action
+        val conv = conversations().first().firstOrNull { it.id == conversationId } ?: return@action
+        val updated = repo.renameConversation(conversationId, newTitle, conv.version)
+        mutable.update { current ->
+            if (current.selected?.id == conversationId || current.selected == null) {
+                current.copy(selected = updated)
+            } else {
+                current
+            }
+        }
+        refreshHome()
+    }
+
     fun reconnectChat() {
         state.value.selected?.let(::open)
     }

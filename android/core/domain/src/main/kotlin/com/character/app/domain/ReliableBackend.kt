@@ -96,6 +96,17 @@ class ReliableBackend(
         }
     }
 
+    override suspend fun renameConversation(
+        conversationId: String,
+        title: String,
+        expectedVersion: Int,
+    ): Conversation {
+        require(conversationId.isNotBlank() && title.isNotBlank() && expectedVersion > 0)
+        return policy.execute(preserveAmbiguousWrite = true) {
+            delegate.renameConversation(conversationId, title, expectedVersion)
+        }
+    }
+
     override suspend fun createRun(
         conversationId: String,
         messageId: String,

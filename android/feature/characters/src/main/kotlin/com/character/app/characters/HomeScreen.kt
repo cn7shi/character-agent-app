@@ -15,11 +15,19 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.unit.dp
+import com.character.app.characters.components.HomeAssistantBubble
+import com.character.app.characters.components.HomeAiTypingBubble
 import com.character.app.characters.components.HomeBottomBar
 import com.character.app.characters.components.HomeStoryCards
+import com.character.app.characters.components.HomeSynopsisCard
 import com.character.app.characters.components.HomeTopBar
-import com.character.app.characters.components.InspirationDialog
+import com.character.app.characters.components.HomeUserBubble
 import com.character.app.characters.components.PersonaSettingsDialog
+import com.character.app.characters.components.RenameConversationDialog
 import com.character.app.domain.Character
 import com.character.app.domain.Conversation
 
@@ -33,8 +41,10 @@ import com.character.app.domain.Conversation
 fun HomeScreen(
     conversations: List<Conversation>,
     characters: List<Character>,
+    selectedConversation: Conversation? = null,
     onOpenConversation: (Conversation) -> Unit,
     onStartWithCharacter: (PlazaCharacter) -> Unit,
+    onRenameConversation: ((conversationId: String, newTitle: String) -> Unit)? = null,
     onOpenPlaza: () -> Unit = {},
     onOpenExplore: () -> Unit = {},
     onOpenProfile: () -> Unit = {},
@@ -48,6 +58,7 @@ fun HomeScreen(
     var uiState by remember {
         mutableStateOf(HomeUiState().selectCharacterById(activeCharacterId))
     }
+    var showRenameDialog by remember { mutableStateOf(false) }
 
     // Synchronize character if activeCharacterId changes from external tabs
     LaunchedEffect(activeCharacterId) {
@@ -89,9 +100,11 @@ fun HomeScreen(
                         if (totalDragY < -60f) {
                             VoicePlayer.stop()
                             uiState = uiState.nextCharacter()
+                            onStartWithCharacter(uiState.currentChar)
                         } else if (totalDragY > 60f) {
                             VoicePlayer.stop()
                             uiState = uiState.previousCharacter()
+                            onStartWithCharacter(uiState.currentChar)
                         }
                         totalDragY = 0f
                     },
@@ -119,8 +132,14 @@ fun HomeScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
         ) {
+            val currentConv = selectedConversation ?: run {
+                val charEntity = characters.find { it.name == currentChar.name || it.id == currentChar.id }
+                conversations.find { (charEntity != null && it.characterId == charEntity.id) || it.characterId == currentChar.id || it.title == currentChar.name }
+            }
+
             HomeTopBar(
                 currentChar = currentChar,
+                conversationTitle = currentConv?.title,
                 isFollowed = uiState.isFollowed,
                 onToggleFollow = {
                     uiState = uiState.toggleFollow()
@@ -133,36 +152,81 @@ fun HomeScreen(
                     Toast.makeText(context, "切换角色：${uiState.currentChar.name}", Toast.LENGTH_SHORT).show()
                 },
                 onOpenPlaza = onOpenPlaza,
-                onOpenPersona = { uiState = uiState.setPersonaSheet(true) }
+                onOpenPersona = { uiState = uiState.setPersonaSheet(true) },
+                onRenameConversation = if (currentConv != null && onRenameConversation != null) {
+                    { showRenameDialog = true }
+                } else null
             )
 
-            Spacer(modifier = Modifier.weight(1f))
+            val listState = rememberLazyListState()
 
-            HomeStoryCards(
-                synopsis = currentChar.synopsis,
-                actionText = uiState.displayActionText,
-                dialogueText = uiState.displayDialogueText,
-                characterName = currentChar.name,
-                voiceDuration = uiState.currentPage.voiceDuration,
-                onAdvanceScript = {
-                    VoicePlayer.stop()
-                    uiState = uiState.advanceScript()
+            // Whenever message count changes or AI begins/finishes generating, smoothly scroll to newest message
+            LaunchedEffect(uiState.currentMessages.size, uiState.isAiGenerating) {
+                val target = uiState.currentMessages.size + (if (uiState.isAiGenerating) 1 else 0)
+                if (target > 0) {
+                    listState.animateScrollToItem(target)
                 }
-            )
+            }
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 12.dp)
+            ) {
+                // 1. Character Background Synopsis Card
+                item(key = "synopsis-${currentChar.id}") {
+                    HomeSynopsisCard(synopsis = currentChar.synopsis)
+                }
+
+                // 2. WeChat-style Messages Flow (User on right, Assistant on left)
+                items(uiState.currentMessages, key = { it.id }) { msg ->
+                    if (msg.role == "user") {
+                        HomeUserBubble(text = msg.dialogueText)
+                    } else {
+                        HomeAssistantBubble(
+                            actionText = msg.actionText ?: "",
+                            dialogueText = msg.dialogueText,
+                            characterName = currentChar.name,
+                            voiceDuration = msg.voiceDuration,
+                            onAdvance = {
+                                VoicePlayer.stop()
+                                uiState = uiState.advanceScript()
+                            }
+                        )
+                    }
+                }
+
+                // 3. AI Thinking/Generating Indicator
+                if (uiState.isAiGenerating) {
+                    item(key = "generating") {
+                        HomeAiTypingBubble(characterName = currentChar.name)
+                    }
+                }
+            }
 
             HomeBottomBar(
                 inputDraft = uiState.inputDraft,
                 onInputDraftChange = { uiState = uiState.updateDraft(it) },
                 isAiGenerating = uiState.isAiGenerating,
                 characterName = currentChar.name,
-                onOpenInspiration = { uiState = uiState.setInspirationSheet(true) },
+                isInspirationVisible = uiState.showInspirationSheet,
+                onToggleInspiration = {
+                    uiState = uiState.setInspirationSheet(!uiState.showInspirationSheet)
+                },
+                onSelectInspiration = { inspiration ->
+                    uiState = uiState.updateDraft(inspiration)
+                },
                 onSendMessage = { text ->
                     val userText = text.trim()
-                    uiState = uiState.startUserSending()
+                    uiState = uiState.addUserMessage(userText).setInspirationSheet(false)
                     Toast.makeText(context, "已发送：“$userText”", Toast.LENGTH_SHORT).show()
 
                     onSendMessage(currentChar.id, userText) { act, dia ->
-                        uiState = uiState.finishAiGenerating(act, dia)
+                        uiState = uiState.addAssistantReply(act, dia).setInspirationSheet(true)
                     }
                 }
             )
@@ -179,13 +243,19 @@ fun HomeScreen(
             )
         }
 
-        // AI Roleplay Inspiration Dialog
-        if (uiState.showInspirationSheet) {
-            InspirationDialog(
-                characterName = currentChar.name,
-                onDismiss = { uiState = uiState.setInspirationSheet(false) },
-                onSelect = { inspiration ->
-                    uiState = uiState.updateDraft(inspiration).setInspirationSheet(false)
+        // Rename Conversation Dialog
+        val renameTarget = selectedConversation ?: run {
+            val charEntity = characters.find { it.name == currentChar.name || it.id == currentChar.id }
+            conversations.find { (charEntity != null && it.characterId == charEntity.id) || it.characterId == currentChar.id || it.title == currentChar.name }
+        }
+        if (showRenameDialog && renameTarget != null) {
+            RenameConversationDialog(
+                initialTitle = renameTarget.title,
+                onDismiss = { showRenameDialog = false },
+                onConfirm = { newTitle ->
+                    onRenameConversation?.invoke(renameTarget.id, newTitle)
+                    showRenameDialog = false
+                    Toast.makeText(context, "会话已重命名为：$newTitle", Toast.LENGTH_SHORT).show()
                 }
             )
         }

@@ -112,4 +112,44 @@ class HomeUiStateTest {
         val withInspiration = state.setInspirationSheet(true)
         assertTrue(withInspiration.showInspirationSheet)
     }
+
+    @Test
+    fun chatMessageFlowAppendsUserAndUpdatesStreamingAssistantInPlace() {
+        var state = HomeUiState()
+        // 1. Initial state has prologue
+        assertEquals(1, state.currentMessages.size)
+        assertEquals("assistant", state.currentMessages.first().role)
+
+        // 2. User sends first message
+        state = state.addUserMessage("Where is the party?")
+        assertEquals(2, state.currentMessages.size)
+        assertEquals("user", state.currentMessages.last().role)
+        assertEquals("Where is the party?", state.currentMessages.last().dialogueText)
+        assertTrue(state.isAiGenerating)
+
+        // 3. First chunk of assistant arrives
+        state = state.applyAssistantReply("（若有所思）这里不是让你玩的地方。")
+        assertEquals(3, state.currentMessages.size)
+        assertEquals("assistant", state.currentMessages.last().role)
+        assertEquals("这里不是让你玩的地方。", state.currentMessages.last().dialogueText)
+        assertFalse(state.isAiGenerating)
+
+        // 4. Second streaming chunk of same turn arrives -> must UPDATE IN PLACE without creating a 4th bubble
+        val assistantId = state.currentMessages.last().id
+        state = state.applyAssistantReply("（若有所思）这里不是让你玩的地方。云端顶层是我的禁区。")
+        assertEquals(3, state.currentMessages.size)
+        assertEquals(assistantId, state.currentMessages.last().id)
+        assertEquals("这里不是让你玩的地方。云端顶层是我的禁区。", state.currentMessages.last().dialogueText)
+
+        // 5. User sends second turn message
+        state = state.addUserMessage("那你拦不住我。")
+        assertEquals(4, state.currentMessages.size)
+        assertEquals("user", state.currentMessages.last().role)
+
+        // 6. Second turn assistant arrives
+        state = state.applyAssistantReply("（冷笑一声）试试看。")
+        assertEquals(5, state.currentMessages.size)
+        assertEquals("assistant", state.currentMessages.last().role)
+        assertEquals("试试看。", state.currentMessages.last().dialogueText)
+    }
 }

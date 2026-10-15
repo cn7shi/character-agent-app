@@ -90,6 +90,19 @@ class CreateConversationRequest(BaseModel):
         return value.strip()
 
 
+class RenameConversationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=100)
+    expected_version: int = Field(ge=1, strict=True)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def validate_title(cls, value):
+        if not isinstance(value, str) or not 1 <= len(value.strip()) <= 100:
+            raise ValueError("title must contain 1 to 100 characters")
+        return value.strip()
+
+
 class MessageBlock(BaseModel):
     type: Literal["text", "narration"]
     text: str

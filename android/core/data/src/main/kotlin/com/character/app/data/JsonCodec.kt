@@ -80,6 +80,7 @@ internal object JsonCodec {
             characterId = o.getString("character_id"),
             title = o.getString("title"),
             updatedAt = o.getString("updated_at"),
+            version = o.optInt("version", 1),
         )
     }
 
@@ -89,6 +90,7 @@ internal object JsonCodec {
             .put("character_id", v.characterId)
             .put("title", v.title)
             .put("updated_at", v.updatedAt)
+            .put("version", v.version)
     }
 
     fun message(o: JSONObject): Message {

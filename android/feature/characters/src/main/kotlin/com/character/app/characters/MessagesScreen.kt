@@ -11,8 +11,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.character.app.characters.components.ConversationItemRow
 import com.character.app.characters.components.MessagesHeader
+import com.character.app.characters.components.RenameConversationDialog
+import com.character.app.domain.Character
 import com.character.app.domain.Conversation
 import com.character.app.domain.Note
 import com.character.app.domain.UserProfile
@@ -21,7 +24,8 @@ import com.character.app.domain.UserProfile
  * MessagesScreen
  *
  * Messages and recent conversation list screen.
- * Refactored into a lean orchestrator (~75 lines) using atomic components.
+ * Supports instant search filtering by conversation title and character name,
+ * and conversation rename via dialog.
  */
 @Composable
 fun MessagesScreen(
@@ -30,7 +34,9 @@ fun MessagesScreen(
     userProfile: UserProfile?,
     busy: Boolean,
     onOpenConversation: (Conversation) -> Unit,
+    characters: List<Character> = emptyList(),
     onOpenPlazaCharacter: (PlazaCharacter) -> Unit = {},
+    onRenameConversation: (Conversation, String) -> Unit = { _, _ -> },
     onRefresh: () -> Unit,
     onNewCharacter: () -> Unit,
     onEditProfile: () -> Unit,
@@ -44,6 +50,22 @@ fun MessagesScreen(
     val filterPills = remember { listOf("最近聊天", "已点赞", "我的") }
     var selectedPill by remember { mutableStateOf("最近聊天") }
     var searchQuery by remember { mutableStateOf("") }
+    var renamingConversation by remember { mutableStateOf<Conversation?>(null) }
+
+    // Filter active conversations by search query (matching conversation title or character name)
+    val filteredConversations = remember(conversations, characters, searchQuery) {
+        conversations.filter { conv ->
+            if (searchQuery.isBlank()) true
+            else {
+                val charEntity = characters.find { it.id == conv.characterId }
+                val matchedChar = PLAZA_CHARACTERS.find { it.name == charEntity?.name || it.name == conv.title || it.id == conv.characterId }
+                conv.title.contains(searchQuery, ignoreCase = true) ||
+                        (charEntity?.name?.contains(searchQuery, ignoreCase = true) == true) ||
+                        (matchedChar?.name?.contains(searchQuery, ignoreCase = true) == true) ||
+                        (matchedChar?.badgeCategory?.contains(searchQuery, ignoreCase = true) == true)
+            }
+        }
+    }
 
     val plazaList = remember(searchQuery, selectedPill) {
         PLAZA_CHARACTERS.filter {
@@ -80,12 +102,58 @@ fun MessagesScreen(
             )
         }
 
-        // 2. Character Conversation List
-        items(plazaList) { charItem ->
-            ConversationItemRow(
-                character = charItem,
-                onClick = { onOpenPlazaCharacter(charItem) }
-            )
+        // 2. Active Conversations List (if any exist)
+        if (filteredConversations.isNotEmpty()) {
+            items(filteredConversations, key = { it.id }) { conv ->
+                val charEntity = characters.find { it.id == conv.characterId }
+                val plazaChar = PLAZA_CHARACTERS.find { it.name == charEntity?.name || it.name == conv.title || it.id == conv.characterId }
+                    ?: PLAZA_CHARACTERS.first()
+                ConversationItemRow(
+                    character = plazaChar,
+                    title = conv.title,
+                    subtitle = plazaChar.quote,
+                    onClick = { onOpenConversation(conv) },
+                    onRename = { renamingConversation = conv }
+                )
+            }
+        } else if (conversations.isNotEmpty() && searchQuery.isNotBlank()) {
+            // Search yielded no active conversation results
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    contentAlignment = androidx.compose.ui.Alignment.Center
+                ) {
+                    androidx.compose.material3.Text(
+                        text = "未找到与“$searchQuery”相关的会话",
+                        fontSize = 13.sp,
+                        color = Color(0x66FFFFFF)
+                    )
+                }
+            }
+        } else {
+            // Fallback: Display discoverable plaza characters
+            items(plazaList, key = { it.id }) { charItem ->
+                ConversationItemRow(
+                    character = charItem,
+                    onClick = { onOpenPlazaCharacter(charItem) }
+                )
+            }
         }
+    }
+
+    // Rename Conversation Dialog
+    if (renamingConversation != null) {
+        RenameConversationDialog(
+            initialTitle = renamingConversation!!.title,
+            onDismiss = { renamingConversation = null },
+            onConfirm = { newTitle ->
+                val target = renamingConversation!!
+                onRenameConversation(target, newTitle)
+                renamingConversation = null
+                Toast.makeText(context, "会话已重命名为：$newTitle", Toast.LENGTH_SHORT).show()
+            }
+        )
     }
 }
