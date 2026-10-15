@@ -37,6 +37,7 @@ fun ChatMessageItem(
     modifier: Modifier = Modifier
 ) {
     val isUser = message.role == "user"
+    @Suppress("DEPRECATION")
     val clipboard = LocalClipboardManager.current
 
     Row(
