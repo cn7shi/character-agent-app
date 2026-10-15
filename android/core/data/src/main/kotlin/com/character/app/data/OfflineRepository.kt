@@ -81,10 +81,14 @@ class OfflineRepository(private val db: ClientDatabase, private val scope: Strin
     }
     override fun characters() = watch("characters", JsonCodec::character)
     override fun conversations() = watch("conversations", JsonCodec::conversation)
+
     override fun messages(conversationId: String) = watch("messages:$conversationId", JsonCodec::message).map { it.sortedBy(Message::sequence) }
+
     override fun runs(conversationId: String) = watch("runs:$conversationId", JsonCodec::run)
     override fun notes() = watch("notes", JsonCodec::note)
+
     override fun pending(conversationId: String) = outbox.pending(conversationId)
+
     override suspend fun draft(conversationId: String) = dao.draft(scope, conversationId)?.let { MessageDraft(it.revision, it.text) }
     override suspend fun saveDraft(conversationId: String, draft: MessageDraft) {
         require(draft.revision.isNotBlank())
