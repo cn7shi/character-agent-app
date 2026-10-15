@@ -246,6 +246,8 @@ fun HomeBottomBar(
                             if (inputDraft.isNotBlank() && !isAiGenerating) {
                                 val textToSend = inputDraft.trim()
                                 onSendMessage(textToSend)
+                            } else if (inputDraft.isNotBlank() && isAiGenerating) {
+                                Toast.makeText(context, "角色正在思考回复中，请稍候...", Toast.LENGTH_SHORT).show()
                             } else if (inputDraft.isBlank()) {
                                 Toast.makeText(context, "请输入你想对${characterName}说的话", Toast.LENGTH_SHORT).show()
                             }

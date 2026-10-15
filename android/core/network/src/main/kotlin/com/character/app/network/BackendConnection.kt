@@ -22,8 +22,8 @@ class BackendConnection(
                 url.password.isEmpty()
         ) { "Base URL must be an origin root without path, query or auth" }
 
-        require(url.isHttps || url.host in LOCAL_DEV_HOSTS) {
-            "Only HTTPS or local loopback addresses (127.0.0.1, 10.0.2.2) are allowed"
+        require(url.isHttps || isLocalOrLanHost(url.host)) {
+            "Only HTTPS or local/LAN development addresses (127.0.0.1, 10.0.2.2, 192.168.x.x) are allowed"
         }
 
         require(credential.isNotBlank() && credential.none { c -> c.isWhitespace() || c.code < 32 }) {
@@ -46,6 +46,19 @@ class BackendConnection(
     override fun toString(): String = "BackendConnection(redacted)"
 
     private companion object {
-        private val LOCAL_DEV_HOSTS = setOf("127.0.0.1", "10.0.2.2")
+        private val LOCAL_DEV_HOSTS = setOf("127.0.0.1", "10.0.2.2", "localhost")
+
+        private fun isLocalOrLanHost(host: String): Boolean {
+            if (host in LOCAL_DEV_HOSTS) return true
+            if (host.startsWith("192.168.") || host.startsWith("10.") || host.startsWith("198.18.")) return true
+            if (host.startsWith("172.")) {
+                val parts = host.split(".")
+                if (parts.size >= 2) {
+                    val second = parts[1].toIntOrNull()
+                    if (second != null && second in 16..31) return true
+                }
+            }
+            return host.endsWith(".local")
+        }
     }
 }

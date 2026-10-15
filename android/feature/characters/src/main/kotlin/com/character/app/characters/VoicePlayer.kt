@@ -34,7 +34,7 @@ import java.util.Locale
  */
 object VoicePlayer {
     private const val TAG = "VoicePlayer"
-    private const val DEFAULT_BACKEND_URL = "http://10.0.2.2:8000/"
+    var activeBackendUrl: String = "http://10.0.2.2:8000/"
     private const val DEFAULT_DEV_TOKEN = "VXyaOWUsTIYIJftfvo0qYe26FUizGyPXtGYarIs4-nQ"
 
     private var mediaPlayer: MediaPlayer? = null
@@ -87,7 +87,7 @@ object VoicePlayer {
         context: Context,
         characterName: String,
         rawText: String,
-        backendBaseUrl: String = DEFAULT_BACKEND_URL
+        backendBaseUrl: String = activeBackendUrl
     ) {
         val cleanKey = "${characterName}_$rawText"
         if (_activeSpokenText.value == cleanKey) {

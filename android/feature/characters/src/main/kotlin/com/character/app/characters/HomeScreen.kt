@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -59,6 +60,7 @@ fun HomeScreen(
         mutableStateOf(HomeUiState().selectCharacterById(activeCharacterId))
     }
     var showRenameDialog by remember { mutableStateOf(false) }
+    val currentChar = uiState.currentChar
 
     // Synchronize character if activeCharacterId changes from external tabs
     LaunchedEffect(activeCharacterId) {
@@ -72,7 +74,20 @@ fun HomeScreen(
         }
     }
 
-    val currentChar = uiState.currentChar
+    // Safety timeout: If backend is offline or slow on real device, fall back to in-character dialogue
+    LaunchedEffect(uiState.isAiGenerating) {
+        if (uiState.isAiGenerating) {
+            delay(3500)
+            if (uiState.isAiGenerating) {
+                val page = uiState.pages.getOrNull(uiState.scriptPageIndex)
+                val fallbackReply = page?.dialogueText ?: currentChar.quote
+                val fallbackAction = page?.actionText ?: "（眸底掠过一丝深邃的审视，语气微沉）"
+                uiState = uiState.addAssistantReply(fallbackAction, fallbackReply)
+                    .advanceScript()
+                    .setInspirationSheet(true)
+            }
+        }
+    }
 
     // Audio lifecycle management
     DisposableEffect(Unit) {

@@ -67,11 +67,15 @@ fun SettingsScreen(
         ) {
             SuggestionChip(
                 onClick = { url = "http://10.0.2.2:8000/" },
-                label = { Text("📱 模拟器 (10.0.2.2)") },
+                label = { Text("📱 模拟器") },
             )
             SuggestionChip(
                 onClick = { url = "http://127.0.0.1:8000/" },
-                label = { Text("💻 USB/本机 (127.0.0.1)") },
+                label = { Text("💻 USB代理") },
+            )
+            SuggestionChip(
+                onClick = { url = "http://192.168.5.29:8000/" },
+                label = { Text("📶 局域网WiFi") },
             )
         }
 

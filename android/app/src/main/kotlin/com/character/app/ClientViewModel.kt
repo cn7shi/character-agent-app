@@ -61,7 +61,15 @@ class ClientViewModel internal constructor(
 
     init {
         try {
-            vault.read()?.let { attach(BackendConnection(it.first, it.second)) }
+            val saved = vault.read()
+            if (saved != null) {
+                attach(BackendConnection(saved.first, saved.second))
+            } else {
+                val defaultUrl = "http://127.0.0.1:8000/"
+                val defaultToken = "VXyaOWUsTIYIJftfvo0qYe26FUizGyPXtGYarIs4-nQ"
+                vault.save(defaultUrl, defaultToken)
+                attach(BackendConnection(defaultUrl, defaultToken))
+            }
         } catch (_: Exception) {
             mutable.update { it.copy(error = "本机连接配置不可用，请重新填写。") }
         }
@@ -88,6 +96,7 @@ class ClientViewModel internal constructor(
 
         // D26: both the in-memory edits and persisted drafts are keyed by profile + conversation.
         connectionScope = connection.scope
+        com.character.app.characters.VoicePlayer.activeBackendUrl = connection.baseUrl
         val backend = backendFactory(connection, vault.mode)
         adapter = backend
         val repo = OfflineRepository(database, connection.scope, backend)
@@ -269,19 +278,52 @@ class ClientViewModel internal constructor(
     // Character Management Operations
     // =========================================================================
 
-    fun newCharacter() = action {
-        val pending = pendingCharacter().first()
-        mutable.update {
-            it.copy(
-                characterEditor = pending ?: CharacterDraft(
-                    id = UUID.randomUUID().toString(),
-                    name = "",
-                    summary = "",
-                    systemPrompt = "",
-                    notesEnabled = false,
-                    version = 0,
+    fun newCharacter() {
+        val repo = repository
+        if (repo == null) {
+            mutable.update {
+                it.copy(
+                    characterEditor = CharacterDraft(
+                        id = UUID.randomUUID().toString(),
+                        name = "",
+                        summary = "",
+                        systemPrompt = "",
+                        notesEnabled = false,
+                        version = 0,
+                    )
                 )
-            )
+            }
+            return
+        }
+        session.launch {
+            try {
+                val pending = repo.pendingCharacter().first()
+                mutable.update {
+                    it.copy(
+                        characterEditor = pending ?: CharacterDraft(
+                            id = UUID.randomUUID().toString(),
+                            name = "",
+                            summary = "",
+                            systemPrompt = "",
+                            notesEnabled = false,
+                            version = 0,
+                        )
+                    )
+                }
+            } catch (_: Exception) {
+                mutable.update {
+                    it.copy(
+                        characterEditor = CharacterDraft(
+                            id = UUID.randomUUID().toString(),
+                            name = "",
+                            summary = "",
+                            systemPrompt = "",
+                            notesEnabled = false,
+                            version = 0,
+                        )
+                    )
+                }
+            }
         }
     }
 
